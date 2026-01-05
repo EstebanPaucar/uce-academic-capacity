@@ -1,0 +1,72 @@
+services:
+  # 1. Base de Datos Relacional (PostgreSQL)
+  # Uso: Estructura Académica, Ciclos de Vida e Integridad ACID [cite: 155, 278, 279]
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: uce_postgres
+    environment:
+      POSTGRES_USER: admin_uce
+      POSTGRES_PASSWORD: password_uce
+      POSTGRES_DB: academic_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # 2. Base de Datos NoSQL (MongoDB)
+  # Uso: Logs de auditoría y trazabilidad del sistema [cite: 156, 280, 281]
+  mongo-db:
+    image: mongo:latest
+    container_name: uce_mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  # 3. Caché y Sesiones (Redis)
+  # Uso: Gestión de sesiones y caché de reglas de negocio [cite: 157, 282, 283]
+  redis-cache:
+    image: redis:alpine
+    container_name: uce_redis
+    ports:
+      - "6379:6379"
+
+  # 4. Bus de Mensajería (RabbitMQ)
+  # Uso: Ingesta masiva asíncrona de archivos Excel/CSV [cite: 163, 293, 294]
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: uce_rabbitmq
+    ports:
+      - "5672:5672"   # Puerto de mensajes
+      - "15672:15672" # Panel de administración (Guest/Guest)
+
+  # 5. Streaming de Eventos (Apache Kafka)
+  # Uso: Comunicación orientada a eventos entre microservicios [cite: 217, 296, 297]
+  kafka:
+    image: bitnami/kafka:latest
+    container_name: uce_kafka
+    environment:
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+    ports:
+      - "9092:9092"
+
+  # 6. Orquestador de Automatización (n8n)
+  # Uso: Generación y envío de reportes oficiales [cite: 168, 253, 285]
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: uce_n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=password_uce
+
+volumes:
+  postgres_data:
+  mongo_data:

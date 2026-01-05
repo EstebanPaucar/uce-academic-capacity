@@ -2,5 +2,42 @@
   "extends": "./tsconfig.base.json",
   "compileOnSave": false,
   "files": [],
-  "references": []
+  "references": [
+    {
+      "path": "./apps/frontend/web-admin-e2e"
+    },
+    {
+      "path": "./apps/frontend/web-admin"
+    },
+    {
+      "path": "./apps/backend/auth-service-e2e"
+    },
+    {
+      "path": "./apps/backend/auth-service"
+    },
+    {
+      "path": "./apps/backend/academic-structure-service-e2e"
+    },
+    {
+      "path": "./apps/backend/academic-structure-service"
+    },
+    {
+      "path": "./apps/backend/data-ingestion-service-e2e"
+    },
+    {
+      "path": "./apps/backend/data-ingestion-service"
+    },
+    {
+      "path": "./apps/backend/rules-configuration-service-e2e"
+    },
+    {
+      "path": "./apps/backend/rules-configuration-service"
+    },
+    {
+      "path": "./apps/backend/capacity-management-service-e2e"
+    },
+    {
+      "path": "./apps/backend/capacity-management-service"
+    }
+  ]
 }
