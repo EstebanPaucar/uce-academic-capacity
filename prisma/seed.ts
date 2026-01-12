@@ -30,7 +30,7 @@ async function main() {
       level: 'PRIMERO',
       parallel: 'A1-001',
       max_capacity: 30,
-      current_students: 22,
+      current_students: 32,
     },
     {
       name: 'FUNDAMENTOS DE LA FÍSICA APLICADA AL DISEÑO Y ARQUITECTURA I',

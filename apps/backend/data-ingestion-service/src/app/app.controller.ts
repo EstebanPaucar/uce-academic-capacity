@@ -8,16 +8,25 @@ export class AppController {
   ) {}
 
   @Post('upload')
-  async uploadFile(@Body() fileData: any) {
-    // Emitimos el evento 'file_uploaded' hacia RabbitMQ
-    this.client.emit('file_uploaded', {
-      timestamp: new Date(),
-      payload: fileData,
+  async uploadFile(@Body() body: any) {
+    // 1. Extraemos los registros que vienen del frontend
+    const { records } = body;
+
+    if (!records || !Array.isArray(records)) {
+      return { status: 'error', message: 'No records found in payload' };
+    }
+
+    // 2. Emitimos CADA registro individualmente a RabbitMQ
+    // IMPORTANTE: El nombre del evento DEBE ser 'course_created'
+    records.forEach((row: any) => {
+      this.client.emit('course_created', row);
     });
     
+    console.log(`--- ETL: Distributed ${records.length} courses to RabbitMQ ---`);
+
     return { 
       status: 'success', 
-      message: 'Data queued for processing' 
+      message: 'Academic data queued for processing' 
     };
   }
 }

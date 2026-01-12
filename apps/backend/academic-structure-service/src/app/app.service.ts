@@ -10,35 +10,40 @@ export class AppService {
     return prisma.faculty.findMany({
       include: {
         careers: {
-          include: { courses: true }
+          include: { 
+            courses: true,
+           }
         }
       }
     });
   }
 
-  async saveCourseFromETL(data: any) {
-  // 1. Asegurar que la Facultad existe
+async saveCourseFromETL(data: any) {
+  // 1. Asegurar que la Facultad existe (Usamos 'Facultad' con F mayúscula)
+  const facultyName = data.Facultad || data.faculty; // Soporta ambos por si acaso
+  
   const faculty = await prisma.faculty.upsert({
-    where: { name: data.faculty },
+    where: { name: facultyName },
     update: {},
-    create: { name: data.faculty }
+    create: { name: facultyName }
   });
 
   // 2. Asegurar que la Carrera existe
+  const careerName = data.Carrera || data.career;
   const career = await prisma.career.findFirst({
-    where: { name: data.career, faculty_id: faculty.id }
+    where: { name: careerName, faculty_id: faculty.id }
   }) || await prisma.career.create({
-    data: { name: data.career, faculty_id: faculty.id }
+    data: { name: careerName, faculty_id: faculty.id }
   });
 
-  // 3. Crear el Curso/Asignatura
+  // 3. Crear el Curso/Asignatura con los datos del Excel
   return prisma.course.create({
     data: {
-      name: data.subject,
-      level: data.level,
-      parallel: data.parallel,
-      max_capacity: data.max_capacity,
-      current_students: data.current_students,
+      name: data.Asignatura || data.subject,
+      level: data.Nivel || data.level,
+      parallel: data.Paralelo || data.parallel,
+      max_capacity: parseInt(data.Cupo) || 0,
+      current_students: parseInt(data.Registrados) || 0,
       career_id: career.id
     }
   });
