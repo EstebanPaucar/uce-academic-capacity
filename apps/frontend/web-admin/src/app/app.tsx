@@ -13,7 +13,7 @@ export function App() {
   return (
     <div style={{ padding: '20px', fontFamily: 'Arial' }}>
       <h1>UCE - Panel de Capacidad Académica</h1>
-      <table border="1" style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table border={1} style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ backgroundColor: '#f2f2f2' }}>
             <th>Facultad</th>
