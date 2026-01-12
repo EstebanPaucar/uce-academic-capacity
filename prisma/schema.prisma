@@ -31,3 +31,15 @@ model Role {
 
   @@map("roles")
 }
+
+model Course {
+  id          Int      @id @default(autoincrement())
+  name        String
+  level       String   // Nuevo: Para "PRIMERO", "SEGUNDO", etc.
+  section     String   // Nuevo: Para el Paralelo "A1-001"
+  max_capacity Int     // Nuevo: El "Cupo registrado" del Excel
+  career_id   Int
+  career      Career   @relation(fields: [career_id], references: [id])
+  
+  @@map("courses")
+}
