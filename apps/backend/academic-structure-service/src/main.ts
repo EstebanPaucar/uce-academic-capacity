@@ -1,15 +1,23 @@
 import { NestFactory } from '@nestjs/core';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AppModule } from './app/app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
-  // 1. Agrega esta línea para permitir que el Front se conecte
-  app.enableCors(); 
-  
-  // 2. Asegúrate de que el prefijo coincida con tu fetch
-  app.setGlobalPrefix('api'); 
+  app.enableCors();
+  app.setGlobalPrefix('api');
 
-  await app.listen(3001); // Puerto del microservicio
+  // Conectar a RabbitMQ para recibir datos del ETL
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.RMQ,
+    options: {
+      urls: ['amqp://guest:guest@localhost:5672'],
+      queue: 'file_processing_queue',
+      queueOptions: { durable: true },
+    },
+  });
+
+  await app.startAllMicroservices(); // Inicia la escucha de mensajes
+  await app.listen(3001);
 }
 bootstrap();

@@ -1,7 +1,24 @@
 import React, { useEffect, useState } from 'react';
 
 export function App() {
+  
+
   const [data, setData] = useState([]);
+  // Dentro de tu componente App
+const handleUpload = async () => {
+  const mockData = {
+    fileName: "planificacion_uce_2026.csv",
+    records: 100 // Aquí podrías enviar el archivo real más adelante
+  };
+
+  await fetch('http://localhost:3000/api/ingestion/upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(mockData)
+  });
+  
+  alert("Archivo enviado al ETL. Los datos se procesarán en segundo plano.");
+};
 
   useEffect(() => {
     // Llamada al microservicio de estructura
@@ -13,6 +30,9 @@ export function App() {
   return (
     <div style={{ padding: '20px', fontFamily: 'Arial' }}>
       <h1>UCE - Panel de Capacidad Académica</h1>
+      <button onClick={handleUpload} style={{ marginBottom: '20px', padding: '10px', cursor: 'pointer' }}>
+  Subir Planificación Académica (Excel/CSV)
+      </button>
       <table border={1} style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ backgroundColor: '#f2f2f2' }}>
@@ -42,6 +62,9 @@ export function App() {
       </table>
     </div>
   );
+
+
+  
 }
 
 export default App;
