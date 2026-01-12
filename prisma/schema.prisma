@@ -1,0 +1,41 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Configuración del generador y la fuente de datos
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL") // Lee la variable que pusimos en tu .env
+}
+
+model User {
+  id            Int      @id @default(autoincrement()) // Cambiado a Int según tu ERD
+  username      String   @unique
+  email         String   @unique
+  password_hash String
+  role_id       Int
+  faculty_id    Int?     // Opcional según el diagrama
+  role          Role     @relation(fields: [role_id], references: [id])
+}
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String
+  permissions Json     // Para manejar los permisos dinámicos
+  users       User[]
+}
