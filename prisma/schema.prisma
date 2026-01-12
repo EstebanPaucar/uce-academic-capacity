@@ -32,14 +32,45 @@ model Role {
   @@map("roles")
 }
 
-model Course {
-  id          Int      @id @default(autoincrement())
-  name        String
-  level       String   // Nuevo: Para "PRIMERO", "SEGUNDO", etc.
-  section     String   // Nuevo: Para el Paralelo "A1-001"
-  max_capacity Int     // Nuevo: El "Cupo registrado" del Excel
-  career_id   Int
-  career      Career   @relation(fields: [career_id], references: [id])
+// Entidad para el Academic-Structure-Service
+model Faculty {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  careers   Career[]
   
+  @@map("faculties")
+}
+
+model Career {
+  id         Int      @id @default(autoincrement())
+  name       String
+  faculty_id Int
+  faculty    Faculty  @relation(fields: [faculty_id], references: [id])
+  courses    Course[]
+
+  @@map("careers")
+}
+
+// Entidad para los cursos basada en tu Excel
+model Course {
+  id               Int      @id @default(autoincrement())
+  name             String   // "NombreAsignatura"
+  level            String   // "Nivel" (ej: PRIMERO)
+  parallel         String   // "Paralelo" (ej: A1-001)
+  max_capacity     Int      // "Cupo registrado"
+  current_students Int      // "Estudiantes registrados"
+  career_id        Int
+  career           Career   @relation(fields: [career_id], references: [id])
+
   @@map("courses")
+}
+
+// Entidad para el Rules-Configuration-Service
+model BusinessRule {
+  id          Int      @id @default(autoincrement())
+  rule_name   String   @unique
+  value       String   // Ej: "40" para capacidad máxima por aula
+  description String?
+
+  @@map("business_rules")
 }
