@@ -1,32 +1,40 @@
-import { Body, Controller, Post, Inject } from '@nestjs/common';
+import { Controller, Post, UploadedFile, UseInterceptors, Inject, BadRequestException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ClientProxy } from '@nestjs/microservices';
+import { AppService } from './app.service';
+import 'multer'; // 👈 Esta línea activa la definición de tipos para Express
+
 
 @Controller('ingestion')
 export class AppController {
   constructor(
     @Inject('INGESTION_SERVICE') private readonly client: ClientProxy,
+    private readonly appService: AppService // Inyectamos el servicio para la lógica de Excel
   ) {}
 
-  @Post('upload')
-  async uploadFile(@Body() body: any) {
-    // 1. Extraemos los registros que vienen del frontend
-    const { records } = body;
-
-    if (!records || !Array.isArray(records)) {
-      return { status: 'error', message: 'No records found in payload' };
+  @Post('upload-excel')
+  @UseInterceptors(FileInterceptor('file')) // El campo en el form-data debe llamarse 'file'
+  async uploadExcel(@UploadedFile() file: Express.Multer.File) {
+    
+    if (!file) {
+      throw new BadRequestException('No se ha detectado ningún archivo en la petición.');
     }
 
+    // 1. Extraemos los datos del Excel usando el Servicio
+    const records = this.appService.parseExcel(file.buffer);
+
     // 2. Emitimos CADA registro individualmente a RabbitMQ
-    // IMPORTANTE: El nombre del evento DEBE ser 'course_created'
+    // Mantenemos el nombre del evento 'course_created' para compatibilidad
     records.forEach((row: any) => {
       this.client.emit('course_created', row);
     });
     
-    console.log(`--- ETL: Distributed ${records.length} courses to RabbitMQ ---`);
+    console.log(`--- ETL Cloud: Distributed ${records.length} courses to RabbitMQ ---`);
 
     return { 
       status: 'success', 
-      message: 'Academic data queued for processing' 
+      totalRecords: records.length,
+      message: 'Excel data extracted and queued for processing' 
     };
   }
 }

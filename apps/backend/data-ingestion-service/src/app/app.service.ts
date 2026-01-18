@@ -1,26 +1,20 @@
-import { Injectable, Inject } from '@nestjs/common';
-import { ClientProxy } from '@nestjs/microservices';
+import { Injectable } from '@nestjs/common';
+import * as XLSX from 'xlsx';
 
 @Injectable()
 export class AppService {
-  constructor(@Inject('INGESTION_SERVICE') private client: ClientProxy) {}
+  
+  parseExcel(buffer: Buffer): any[] {
+    // Lectura del libro de trabajo (Workbook)
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    
+    // Obtenemos la primera hoja de cálculo
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
 
-  async processExcelData(rawData: any[]) {
-    // Aquí el ETL "limpia" los datos antes de enviarlos
-    for (const row of rawData) {
-      const payload = {
-        faculty: row.Facultad,
-        career: row.Carrera,
-        subject: row.Asignatura,
-        level: row.Nivel,
-        parallel: row.Paralelo,
-        max_capacity: parseInt(row.Cupo),
-        current_students: parseInt(row.Registrados)
-      };
+    // Transformación: Convertimos la hoja a un arreglo de objetos JSON
+    const data = XLSX.utils.sheet_to_json(worksheet);
 
-      // Enviamos cada asignatura a la cola de RabbitMQ
-      this.client.emit('course_created', payload);
-    }
-    return { status: 'processing', count: rawData.length };
+    return data;
   }
 }

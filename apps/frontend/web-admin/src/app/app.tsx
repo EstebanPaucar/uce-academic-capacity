@@ -2,6 +2,10 @@ import React, { useEffect, useState } from 'react';
 
 export function App() {
   const [data, setData] = useState([]);
+  //const BASE_URL = "http://localhost:3000";
+  //http://localhost:3000/api/ingestion/upload
+  const INGESTION_SERVICE_URL = "http://localhost:3000";
+  const STRUCTURE_SERVICE_URL = "http://localhost:3001";
 
   // Función para subir datos reales del Excel al ETL
   const handleUpload = async () => {
@@ -44,9 +48,9 @@ export function App() {
         Registrados: 25
       }
     ];
-
+    
     try {
-      const response = await fetch('http://localhost:3000/api/ingestion/upload', {
+      const response = await fetch(`${INGESTION_SERVICE_URL}/api/ingestion/upload`, { //uce-academic-alb-457797382.us-east-1.elb.amazonaws.com
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ records: realExcelData })
@@ -66,7 +70,7 @@ export function App() {
   };
 
   const fetchData = () => {
-    fetch('http://localhost:3001/api/structure')
+    fetch(`${STRUCTURE_SERVICE_URL}/api/structure`)
       .then(res => res.json())
       .then(json => setData(json))
       .catch(err => console.error("Error cargando tabla:", err));

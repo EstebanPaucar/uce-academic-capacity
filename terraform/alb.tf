@@ -44,3 +44,40 @@ resource "aws_lb_listener" "http" {
     }
   }
 }
+
+# Target Group: A dónde va el tráfico
+resource "aws_lb_target_group" "uce_tg" {
+  name     = "uce-app-tg"
+  port     = 4200 # Puerto del Frontend por defecto
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.uce_vpc.id
+
+  health_check {
+    path = "/"
+    port = "4200"
+  }
+}
+
+# Conectar la instancia al Target Group
+resource "aws_lb_target_group_attachment" "app_attach" {
+  target_group_arn = aws_lb_target_group.uce_tg.arn
+  target_id        = aws_instance.app_server.id
+  port             = 4200
+}
+
+# Actualizar el Listener para que use este Target Group
+resource "aws_lb_listener_rule" "forward_all" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.uce_tg.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["*"]
+    }
+  }
+}
