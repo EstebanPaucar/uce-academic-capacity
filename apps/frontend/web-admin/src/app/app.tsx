@@ -1,70 +1,40 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 export function App() {
   const [data, setData] = useState([]);
-  //const BASE_URL = "http://localhost:3000";
-  //http://localhost:3000/api/ingestion/upload
+  const fileInputRef = useRef<HTMLInputElement>(null); // Referencia para el selector de archivos
+  
   const INGESTION_SERVICE_URL = "http://localhost:3000";
   const STRUCTURE_SERVICE_URL = "http://localhost:3001";
 
-  // Función para subir datos reales del Excel al ETL
-  const handleUpload = async () => {
-    // Datos reales extraídos de: Asignaturas Por Paralelo 002.xlsx
-    const realExcelData = [
-      {
-        Facultad: 'ARQUITECTURA Y URBANISMO',
-        Carrera: 'ARQUITECTURA (R)',
-        Asignatura: 'FUNDAMENTOS DE EXPRESIÓN PLÁSTICA',
-        Nivel: 'PRIMERO',
-        Paralelo: 'A1-001',
-        Cupo: 30,
-        Registrados: 22
-      },
-      {
-        Facultad: 'ARQUITECTURA Y URBANISMO',
-        Carrera: 'ARQUITECTURA (R)',
-        Asignatura: 'FUNDAMENTOS DE LA FÍSICA APLICADA AL DISEÑO Y ARQUITECTURA I',
-        Nivel: 'PRIMERO',
-        Paralelo: 'A1-001',
-        Cupo: 40,
-        Registrados: 36
-      },
-      {
-        Facultad: 'ARQUITECTURA Y URBANISMO',
-        Carrera: 'ARQUITECTURA (R)',
-        Asignatura: 'FUNDAMENTOS DE LA MATEMÁTICA APLICADA AL DISEÑO Y ARQUITECTURA I',
-        Nivel: 'PRIMERO',
-        Paralelo: 'A1-001',
-        Cupo: 30,
-        Registrados: 26
-      },
-      {
-        Facultad: 'ARQUITECTURA Y URBANISMO',
-        Carrera: 'ARQUITECTURA (R)',
-        Asignatura: 'FUNDAMENTOS DE REPRESENTACIÓN GEOMÉTRICA I',
-        Nivel: 'PRIMERO',
-        Paralelo: 'A1-001',
-        Cupo: 30,
-        Registrados: 25
-      }
-    ];
-    
+  // --- 1. FUNCIÓN PARA ACTIVAR EL SELECTOR DE ARCHIVOS ---
+  const handleButtonClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  // --- 2. FUNCIÓN PARA SUBIR EL EXCEL REAL ---
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file); // 'file' debe coincidir con FileInterceptor('file') en el backend
+
     try {
-      const response = await fetch(`${INGESTION_SERVICE_URL}/api/ingestion/upload`, { //uce-academic-alb-457797382.us-east-1.elb.amazonaws.com
+      // 🚩 Apuntamos a la ruta de Excel que creamos en el controlador [cite: 2026-01-18]
+      const response = await fetch(`${INGESTION_SERVICE_URL}/api/ingestion/upload-excel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ records: realExcelData })
+        body: formData, // No enviamos JSON, enviamos el archivo directamente
       });
 
       if (response.ok) {
-        alert("¡Éxito! Los datos de Arquitectura han sido enviados al ETL.");
-        // Opcional: Recargar los datos después de un momento para ver los cambios
+        alert("¡Archivo subido! El ETL está procesando las materias de la UCE.");
         setTimeout(fetchData, 2000);
       } else {
-        alert("Error al conectar con el ETL. Verifica que el servicio en el puerto 3000 esté activo.");
+        alert("Error al subir el archivo. Revisa que el servicio de Ingestión (3000) esté activo.");
       }
     } catch (error) {
-      console.error("Error en el fetch:", error);
+      console.error("Error en la subida:", error);
       alert("No se pudo conectar con el servidor.");
     }
   };
@@ -81,30 +51,40 @@ export function App() {
   }, []);
 
   return (
-    <div style={{ padding: '20px', fontFamily: 'Arial' }}>
-      <header style={{ marginBottom: '30px', borderBottom: '2px solid #003366', paddingBottom: '10px' }}>
+    <div style={{ padding: '20px', fontFamily: 'Arial', backgroundColor: '#f4f7f6', minHeight: '100vh' }}>
+      <header style={{ marginBottom: '30px', borderBottom: '3px solid #003366', paddingBottom: '15px' }}>
         <h1 style={{ color: '#003366' }}>UCE - Panel de Capacidad Académica</h1>
-        <p>Gestión de Carga Horaria y Cupos por Facultad</p>
+        <p>PaucarDevs | Carga de Reportes Institucionales</p>
       </header>
 
       <div style={{ marginBottom: '20px' }}>
+        {/* Input oculto que abre el selector de archivos [cite: 2026-01-19] */}
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          onChange={handleFileUpload} 
+          style={{ display: 'none' }} 
+          accept=".xlsx, .xls"
+        />
+        
         <button 
-          onClick={handleUpload} 
+          onClick={handleButtonClick} 
           style={{ 
-            padding: '12px 20px', 
-            backgroundColor: '#007bff', 
+            padding: '12px 24px', 
+            backgroundColor: '#003366', 
             color: 'white', 
             border: 'none', 
-            borderRadius: '5px', 
+            borderRadius: '4px', 
             cursor: 'pointer',
             fontWeight: 'bold'
           }}
         >
-          🚀 Subir Planificación de Arquitectura (Real Data)
+          📁 Seleccionar y Subir Excel de la UCE
         </button>
       </div>
 
-      <table border={1} style={{ width: '100%', borderCollapse: 'collapse', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}>
+      {/* Tu tabla se mantiene igual... */}
+      <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'white' }}>
         <thead>
           <tr style={{ backgroundColor: '#003366', color: 'white' }}>
             <th style={{ padding: '12px' }}>Facultad</th>
@@ -112,7 +92,7 @@ export function App() {
             <th style={{ padding: '12px' }}>Asignatura</th>
             <th style={{ padding: '12px' }}>Nivel / Paralelo</th>
             <th style={{ padding: '12px' }}>Cupo</th>
-            <th style={{ padding: '12px' }}>Registrados</th>
+            <th style={{ padding: '12px' }}>Matriculados</th>
           </tr>
         </thead>
         <tbody>
@@ -120,25 +100,25 @@ export function App() {
             data.map((faculty: any) => 
               faculty.careers?.map((career: any) => 
                 career.courses?.map((course: any) => (
-                  <tr key={course.id} style={{ textAlign: 'center' }}>
+                  <tr key={course.id} style={{ textAlign: 'center', borderBottom: '1px solid #ddd' }}>
                     <td style={{ padding: '10px' }}>{faculty.name}</td>
                     <td style={{ padding: '10px' }}>{career.name}</td>
                     <td style={{ padding: '10px' }}>{course.name}</td>
                     <td style={{ padding: '10px' }}>{course.level} - {course.parallel}</td>
-                    <td style={{ padding: '10px' }}>{course.max_capacity}</td>
-                    <td style={{ padding: '10px', color: course.current_students >= course.max_capacity ? 'red' : 'green', fontWeight: 'bold' }}>
-                      {course.current_students}
+                    <td style={{ padding: '10px', fontWeight: 'bold' }}>{course.maxCapacity}</td>
+                    <td style={{ 
+                      padding: '10px', 
+                      color: course.currentStudents >= course.maxCapacity ? 'red' : 'green', 
+                      fontWeight: 'bold' 
+                    }}>
+                      {course.currentStudents}
                     </td>
                   </tr>
                 ))
               )
             )
           ) : (
-            <tr>
-              <td colSpan={6} style={{ padding: '20px', textAlign: 'center' }}>
-                Cargando datos o base de datos vacía...
-              </td>
-            </tr>
+            <tr><td colSpan={6} style={{ textAlign: 'center', padding: '20px' }}>Esperando carga de datos...</td></tr>
           )}
         </tbody>
       </table>

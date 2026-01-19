@@ -55,16 +55,17 @@ model Career {
 
 // Entidad para los cursos basada en tu Excel [cite: 2026-01-18]
 model Course {
-  id              Int    @id @default(autoincrement())
-  name            String // "Asignatura"
-  level           String // "Nivel"
-  parallel        String // "Paralelo"
-  maxCapacity     Int    @map("max_capacity") // "Capacidad_Maxima"
-  currentStudents Int    @map("current_students") // "Alumnos_Matriculados"
-  careerId        Int    @map("career_id")
-  career          Career @relation(fields: [careerId], references: [id])
+  id              Int      @id @default(autoincrement())
+  name            String
+  level           String
+  parallel        String
+  maxCapacity     Int
+  currentStudents Int
+  careerId        Int
+  career          Career   @relation(fields: [careerId], references: [id])
 
-  @@map("courses")
+  // 🚩 CLAVE ÚNICA COMPUESTA: Evita que existan dos registros iguales [cite: 2026-01-18]
+  @@unique([name, parallel, level, careerId])
 }
 
 // Entidad para el Rules-Configuration-Service

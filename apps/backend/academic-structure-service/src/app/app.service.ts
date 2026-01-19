@@ -48,11 +48,27 @@ export class AppService {
       });
 
       // 5. Creación del Curso con valores reales
-      return await this.prisma.course.create({
-        data: {
+// ... dentro de saveAcademicData
+// 4. Upsert del Curso (Evita duplicados) [cite: 2026-01-18]
+      return await this.prisma.course.upsert({
+        where: {
+    // Debe coincidir exactamente con el @@unique del esquema
+          name_parallel_level_careerId: {
+            name: String(asignatura).trim(),
+            parallel: data.Paralelo?.toString() || 'N/A',
+            level: data.Nivel?.toString() || 'N/A',
+            careerId: career.id
+          }
+        },
+        update: {
+    // Si ya existe, actualizamos los números por si cambiaron [cite: 2026-01-18]
+          maxCapacity: parseInt(cupoRaw.toString()) || 0,
+          currentStudents: parseInt(inscritosRaw.toString()) || 0,
+        },
+        create: {
           name: String(asignatura).trim(),
-          level: data.Nivel?.toString() || data['__EMPTY_10']?.toString() || 'N/A',
-          parallel: data.Paralelo?.toString() || data['__EMPTY_11']?.toString() || 'N/A',
+          level: data.Nivel?.toString() || 'N/A',
+          parallel: data.Paralelo?.toString() || 'N/A',
           maxCapacity: parseInt(cupoRaw.toString()) || 0,
           currentStudents: parseInt(inscritosRaw.toString()) || 0,
           careerId: career.id
