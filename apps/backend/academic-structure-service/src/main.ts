@@ -14,12 +14,15 @@ async function bootstrap() {
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.RMQ,
     options: {
-      // Priorizamos variables de entorno para la conectividad en AWS Academy [cite: 2026-01-06]
+      // Priorizamos variables de entorno para AWS Academy [cite: 2026-01-06]
       urls: [process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672'],
-      // 🚩 CAMBIO CRÍTICO: Debe coincidir exactamente con el Productor (data-ingestion)
       queue: 'academic_data_queue',
+      
+      // 🚩 CAMBIO CRÍTICO: Necesario para que channel.ack() funcione en el controlador [cite: 2026-01-18]
+      noAck: false, 
+      
       queueOptions: { 
-        durable: true // Garantiza que los mensajes no se pierdan si el contenedor se reinicia [cite: 2026-01-06]
+        durable: true // Garantiza persistencia en el entorno Learner Lab [cite: 2026-01-06]
       },
     },
   });
@@ -29,7 +32,7 @@ async function bootstrap() {
   await app.listen(3001);
   
   console.log('--- 🚀 Academic Structure Service is running on port 3001 ---');
-  console.log('--- 📦 Listening to queue: academic_data_queue ---');
+  console.log('--- 📦 Listening to queue: academic_data_queue (Manual Ack Enabled) ---');
 }
 
 bootstrap();
