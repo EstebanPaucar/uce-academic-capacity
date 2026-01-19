@@ -1,4 +1,4 @@
-import { Controller, Post, UploadedFile, UseInterceptors, Inject, Logger, BadRequestException } from '@nestjs/common';
+import { Controller, Post, UploadedFile, UseInterceptors, Inject, Logger, BadRequestException, Body } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ClientProxy } from '@nestjs/microservices';
 import { AppService } from './app.service';
@@ -13,19 +13,38 @@ export class AppController {
     private readonly appService: AppService
   ) {}
 
-  // 1. Cambiamos a POST upload-excel y usamos interceptor de archivos [cite: 2026-01-18]
+  // 🚩 1. NUEVA RUTA PARA EL BOTÓN DE REACT (JSON) [cite: 2026-01-19]
+  // Esta ruta atiende el POST a /api/ingestion/upload
+  @Post('upload')
+  async handleManualUpload(@Body() body: { records: any[] }) {
+    if (!body.records || body.records.length === 0) {
+      throw new BadRequestException('No hay registros para procesar.');
+    }
+
+    this.logger.log(`Recibidos ${body.records.length} registros manuales desde React.`);
+
+    // Enviamos a RabbitMQ
+    body.records.forEach((row: any) => {
+      this.client.emit('course_created', row);
+    });
+
+    return { 
+      status: 'success', 
+      message: 'Simulación de carga enviada a la cola' 
+    };
+  }
+
+  // 🚩 2. RUTA PARA ARCHIVOS REALES (EXCEL) [cite: 2026-01-18]
+  // Esta ruta atiende el POST a /api/ingestion/upload-excel
   @Post('upload-excel')
   @UseInterceptors(FileInterceptor('file'))
   async uploadFile(@UploadedFile() file: Express.Multer.File) {
-    
     if (!file) {
       throw new BadRequestException('No se ha subido ningún archivo.');
     }
 
-    // 2. Procesamos el buffer usando la lógica de salto de filas (range: 5) [cite: 2026-01-18]
     const records = this.appService.parseExcel(file.buffer);
 
-    // 3. Emitimos CADA registro a RabbitMQ con el evento 'course_created' [cite: 2026-01-18]
     records.forEach((row: any) => {
       this.client.emit('course_created', row);
     });
@@ -35,7 +54,7 @@ export class AppController {
     return { 
       status: 'success', 
       totalProcessed: records.length,
-      message: 'Datos académicos enviados a la cola de procesamiento' 
+      message: 'Excel procesado y enviado a la cola' 
     };
   }
 }
