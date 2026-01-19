@@ -1,40 +1,41 @@
-import { Controller, Post, UploadedFile, UseInterceptors, Inject, BadRequestException } from '@nestjs/common';
+import { Controller, Post, UploadedFile, UseInterceptors, Inject, Logger, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ClientProxy } from '@nestjs/microservices';
 import { AppService } from './app.service';
-import 'multer'; // 👈 Esta línea activa la definición de tipos para Express
-
+import 'multer';
 
 @Controller('ingestion')
 export class AppController {
+  private readonly logger = new Logger(AppController.name);
+
   constructor(
     @Inject('INGESTION_SERVICE') private readonly client: ClientProxy,
-    private readonly appService: AppService // Inyectamos el servicio para la lógica de Excel
+    private readonly appService: AppService
   ) {}
 
+  // 1. Cambiamos a POST upload-excel y usamos interceptor de archivos [cite: 2026-01-18]
   @Post('upload-excel')
-  @UseInterceptors(FileInterceptor('file')) // El campo en el form-data debe llamarse 'file'
-  async uploadExcel(@UploadedFile() file: Express.Multer.File) {
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadFile(@UploadedFile() file: Express.Multer.File) {
     
     if (!file) {
-      throw new BadRequestException('No se ha detectado ningún archivo en la petición.');
+      throw new BadRequestException('No se ha subido ningún archivo.');
     }
 
-    // 1. Extraemos los datos del Excel usando el Servicio
+    // 2. Procesamos el buffer usando la lógica de salto de filas (range: 5) [cite: 2026-01-18]
     const records = this.appService.parseExcel(file.buffer);
 
-    // 2. Emitimos CADA registro individualmente a RabbitMQ
-    // Mantenemos el nombre del evento 'course_created' para compatibilidad
+    // 3. Emitimos CADA registro a RabbitMQ con el evento 'course_created' [cite: 2026-01-18]
     records.forEach((row: any) => {
       this.client.emit('course_created', row);
     });
-    
-    console.log(`--- ETL Cloud: Distributed ${records.length} courses to RabbitMQ ---`);
+
+    this.logger.log(`--- ETL: Distributed ${records.length} courses to RabbitMQ ---`);
 
     return { 
       status: 'success', 
-      totalRecords: records.length,
-      message: 'Excel data extracted and queued for processing' 
+      totalProcessed: records.length,
+      message: 'Datos académicos enviados a la cola de procesamiento' 
     };
   }
 }

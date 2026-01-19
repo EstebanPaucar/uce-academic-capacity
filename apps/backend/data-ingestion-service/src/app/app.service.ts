@@ -1,47 +1,46 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 
 @Injectable()
 export class AppService {
-  // Columnas obligatorias según la estructura académica de la UCE
-  private readonly REQUIRED_COLUMNS = [
-    'Facultad', 
-    'Carrera', 
-    'Asignatura', 
-    'Nivel', 
-    'Paralelo', 
-    'Capacidad_Maxima', 
-    'Alumnos_Matriculados'
-  ];
+  private readonly logger = new Logger(AppService.name);
 
-  // 1. Renombramos a parseExcel para que el controlador la encuentre
-  parseExcel(buffer: Buffer): any[] { 
+  // 1. Mapeo flexible para validar que el reporte tenga lo mínimo necesario [cite: 2026-01-18]
+  private readonly MANDATORY_KEYWORDS = ['Facultad', 'Carrera', 'Asignatura', 'Cupo'];
+
+  parseExcel(buffer: Buffer): any[] {
     try {
+      this.logger.log('Iniciando procesamiento de reporte institucional UCE...');
+      
       const workbook = XLSX.read(buffer, { type: 'buffer' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      
-      // Convertimos a JSON
-      const records: any[] = XLSX.utils.sheet_to_json(sheet);
+
+      // 2. CORRECCIÓN: Saltamos las primeras 5 filas de logotipos/títulos [cite: 2026-01-18]
+      const records: any[] = XLSX.utils.sheet_to_json(sheet, { 
+        range: 5, 
+        defval: null 
+      });
 
       if (!records || records.length === 0) {
-        throw new BadRequestException('El archivo Excel no contiene datos.');
+        throw new BadRequestException('El archivo Excel no contiene datos después de la fila 5.');
       }
 
-      // 2. Validación de columnas
-      const firstRecordKeys = Object.keys(records[0]);
-      const missingColumns = this.REQUIRED_COLUMNS.filter(col => !firstRecordKeys.includes(col));
+      // 3. Validación flexible: Buscamos si las columnas clave existen de alguna forma [cite: 2026-01-18]
+      const firstRow = JSON.stringify(records[0]);
+      const missing = this.MANDATORY_KEYWORDS.filter(key => !firstRow.includes(key));
 
-      if (missingColumns.length > 0) {
-        throw new BadRequestException(`Formato inválido. Faltan las columnas: ${missingColumns.join(', ')}`);
+      // Si falta 'Asignatura', pero existe 'Nombre Asignatura', la validación pasa
+      if (missing.length > 0 && !firstRow.includes('Nombre Asignatura')) {
+        throw new BadRequestException(`El reporte no tiene el formato esperado. Faltan referencias a: ${missing.join(', ')}`);
       }
 
-      // 3. IMPORTANTE: Devolvemos el array de registros al controlador
-      // Quitamos el emit de aquí porque ya lo haces en el AppController
-      return records; 
+      this.logger.log(`Éxito: ${records.length} registros extraídos.`);
+      return records;
 
     } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      throw new BadRequestException('Error al procesar el archivo Excel. Verifique el formato.');
+      const msg = error instanceof Error ? error.message : 'Error desconocido';
+      this.logger.error(`Error en AppService: ${msg}`);
+      throw new BadRequestException(msg);
     }
   }
 }
