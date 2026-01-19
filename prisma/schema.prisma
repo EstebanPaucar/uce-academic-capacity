@@ -9,24 +9,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Modelo de Usuario (Basado en tu ERD)
+// Modelo de Usuario
 model User {
-  id            Int      @id @default(autoincrement())
-  username      String   @unique
-  email         String   @unique
-  password_hash String
-  role_id       Int
-  faculty_id    Int?     // Opcional según el diagrama visual
-  role          Role     @relation(fields: [role_id], references: [id])
+  id           Int    @id @default(autoincrement())
+  username     String @unique
+  email        String @unique
+  passwordHash String @map("password_hash")
+  roleId       Int    @map("role_id")
+  facultyId    Int?   @map("faculty_id")
+  role         Role   @relation(fields: [roleId], references: [id])
 
-  @@map("users") // Mapeo a nombre de tabla en minúsculas
+  @@map("users")
 }
 
-// Modelo de Rol (Basado en tu ERD)
+// Modelo de Rol
 model Role {
-  id          Int      @id @default(autoincrement())
+  id          Int    @id @default(autoincrement())
   name        String
-  permissions Json     // Para permisos dinámicos en formato JSON
+  permissions Json
   users       User[]
 
   @@map("roles")
@@ -34,42 +34,44 @@ model Role {
 
 // Entidad para el Academic-Structure-Service
 model Faculty {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  careers   Career[]
-  
+  id      Int      @id @default(autoincrement())
+  name    String   @unique
+  careers Career[]
+
   @@map("faculties")
 }
 
 model Career {
-  id         Int      @id @default(autoincrement())
-  name       String
-  faculty_id Int
-  faculty    Faculty  @relation(fields: [faculty_id], references: [id])
-  courses    Course[]
+  id        Int      @id @default(autoincrement())
+  name      String
+  facultyId Int      @map("faculty_id")
+  faculty   Faculty  @relation(fields: [facultyId], references: [id])
+  courses   Course[]
 
+  // 🚩 SOLUCIÓN AL ERROR ts(2353): Define el índice único compuesto [cite: 2026-01-18]
+  @@unique([name, facultyId], name: "name_facultyId")
   @@map("careers")
 }
 
-// Entidad para los cursos basada en tu Excel
+// Entidad para los cursos basada en tu Excel [cite: 2026-01-18]
 model Course {
-  id               Int      @id @default(autoincrement())
-  name             String   // "NombreAsignatura"
-  level            String   // "Nivel" (ej: PRIMERO)
-  parallel         String   // "Paralelo" (ej: A1-001)
-  max_capacity     Int      // "Cupo registrado"
-  current_students Int      // "Estudiantes registrados"
-  career_id        Int
-  career           Career   @relation(fields: [career_id], references: [id])
+  id              Int    @id @default(autoincrement())
+  name            String // "Asignatura"
+  level           String // "Nivel"
+  parallel        String // "Paralelo"
+  maxCapacity     Int    @map("max_capacity") // "Capacidad_Maxima"
+  currentStudents Int    @map("current_students") // "Alumnos_Matriculados"
+  careerId        Int    @map("career_id")
+  career          Career @relation(fields: [careerId], references: [id])
 
   @@map("courses")
 }
 
 // Entidad para el Rules-Configuration-Service
 model BusinessRule {
-  id          Int      @id @default(autoincrement())
-  rule_name   String   @unique
-  value       String   // Ej: "40" para capacidad máxima por aula
+  id          Int     @id @default(autoincrement())
+  ruleName    String  @unique @map("rule_name")
+  value       String
   description String?
 
   @@map("business_rules")
