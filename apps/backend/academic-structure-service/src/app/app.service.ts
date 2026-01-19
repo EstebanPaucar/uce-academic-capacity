@@ -6,63 +6,62 @@ export class AppService {
   private prisma = new PrismaClient();
   private readonly logger = new Logger(AppService.name);
 
-  // 🚩 ESTA ES LA FUNCIÓN QUE FALTABA Y CAUSABA EL ERROR [cite: 2026-01-18]
+  // 🚩 MEMORIA DE CONTEXTO: Para manejar celdas combinadas [cite: 2026-01-18]
+  private lastFaculty = '';
+  private lastCareer = '';
+
   async getStructure() {
-    this.logger.log('Fetching full academic structure from database');
     return this.prisma.faculty.findMany({
-      include: {
-        careers: {
-          include: { 
-            courses: true,
-          }
-        }
-      }
+      include: { careers: { include: { courses: true } } }
     });
   }
 
-  // --- PROCESAMIENTO DEL ETL ---
-  async saveAcademicData(rawData: any) {
+  async saveAcademicData(data: any): Promise<any> {
     try {
-      // MAPEADOR INTELIGENTE: Traduce los nombres del reporte de la UCE [cite: 2026-01-18]
-      const data = {
-        Facultad: rawData.Facultad,
-        Carrera: rawData.Carrera,
-        Asignatura: rawData.Asignatura || rawData['Nombre Asignatura'],
-        Nivel: rawData.Nivel || rawData.Semestre,
-        Paralelo: rawData.Paralelo,
-        Capacidad_Maxima: rawData.Capacidad_Maxima || rawData.Cupo || rawData.Capacidad,
-        Alumnos_Matriculados: rawData.Alumnos_Matriculados || rawData.Inscritos
-      };
+      // 1. Lógica de Memoria: Si el campo viene, actualizamos; si no, usamos el anterior [cite: 2026-01-18]
+      if (data.Facultad) this.lastFaculty = String(data.Facultad).trim();
+      
+      // En el reporte UCE, la carrera suele venir en 'Unnamed: 6' si la columna 'Carrera' está vacía [cite: 2026-01-18]
+      const currentCareer = data.Carrera || data['Unnamed: 6'];
+      if (currentCareer) this.lastCareer = String(currentCareer).trim();
 
-      // Si la fila no tiene Facultad o Asignatura, la ignoramos silenciosamente [cite: 2026-01-18]
-      if (!data.Facultad || !data.Asignatura) {
-        return; 
-      }
+      // 2. CORRECCIÓN DE CEROS: Mapeo de nombres exactos del reporte UCE [cite: 2026-01-18]
+      const asignatura = data.Asignatura || data['Nombre Asignatura'];
+      const cupoRaw = data['Cupo registrado'] || data.Cupo || 0;
+      const inscritosRaw = data['Estudiantes registrados'] || data.Inscritos || 0;
 
+      // Si no hay asignatura o facultad, saltamos la fila (posible fila vacía del Excel)
+      if (!asignatura || !this.lastFaculty) return null;
+
+      // 3. Persistencia de Facultad
       const faculty = await this.prisma.faculty.upsert({
-        where: { name: data.Facultad },
+        where: { name: this.lastFaculty },
         update: {},
-        create: { name: data.Facultad }
+        create: { name: this.lastFaculty }
       });
 
+      // 4. Persistencia de Carrera
       const career = await this.prisma.career.upsert({
-        where: { name_facultyId: { name: data.Carrera, facultyId: faculty.id } },
+        where: { name_facultyId: { name: this.lastCareer, facultyId: faculty.id } },
         update: {},
-        create: { name: data.Carrera, facultyId: faculty.id }
+        create: { name: this.lastCareer, facultyId: faculty.id }
       });
 
+      // 5. Creación del Curso con valores reales
       return await this.prisma.course.create({
         data: {
-          name: data.Asignatura,
-          level: data.Nivel?.toString() || 'N/A',
-          parallel: data.Paralelo?.toString() || 'N/A',
-          maxCapacity: parseInt(data.Capacidad_Maxima as string) || 0,
-          currentStudents: parseInt(data.Alumnos_Matriculados as string) || 0,
+          name: String(asignatura).trim(),
+          level: data.Nivel?.toString() || data['__EMPTY_10']?.toString() || 'N/A',
+          parallel: data.Paralelo?.toString() || data['__EMPTY_11']?.toString() || 'N/A',
+          maxCapacity: parseInt(cupoRaw.toString()) || 0,
+          currentStudents: parseInt(inscritosRaw.toString()) || 0,
           careerId: career.id
         }
       });
     } catch (error) {
-      this.logger.error(`Error procesando materia: ${error instanceof Error ? error.message : 'Unknown'}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Error en base de datos: ${errorMessage}`);
+      throw error;
     }
   }
 }
