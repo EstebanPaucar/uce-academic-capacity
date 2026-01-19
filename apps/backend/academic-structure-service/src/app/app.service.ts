@@ -23,8 +23,8 @@ export class AppService {
   // --- PROCESAMIENTO DEL ETL (EXCEL) ---
   async saveAcademicData(rawData: any) {
     try {
-      // 🚩 PASO CLAVE: Mapear y validar los datos del Excel antes de procesar [cite: 2026-01-18]
-      const data = this.validateHeaders(rawData);
+      // 🚩 CORRECCIÓN: Debes invocar la validación y usar el objeto mapeado
+      const data = this.validateHeaders(rawData); 
 
       // 1. Asegurar que la Facultad existe
       const faculty = await this.prisma.faculty.upsert({
@@ -45,7 +45,7 @@ export class AppService {
         }
       });
 
-      // 3. Crear el Curso con los datos mapeados [cite: 2026-01-18]
+      // 3. Crear el Curso con los datos ya normalizados [cite: 2026-01-18]
       return await this.prisma.course.create({
         data: {
           name: data.Asignatura,
@@ -63,26 +63,23 @@ export class AppService {
     }
   }
 
-  // --- HELPER PARA COMPATIBILIDAD CON REPORTES UCE ---
+  // --- HELPER DE NORMALIZACIÓN ---
   private validateHeaders(row: any) {
-    // Este mapeo permite que el código entienda "Cupo" o "Capacidad" indistintamente [cite: 2026-01-18]
     const mapping = {
       Facultad: row.Facultad,
       Carrera: row.Carrera,
-      Asignatura: row.Asignatura || row['Nombre Asignatura'] || row.subject,
-      Nivel: row.Nivel || row.Semestre || row.level,
-      Paralelo: row.Paralelo || row.parallel,
-      Capacidad_Maxima: row.Capacidad_Maxima || row.Cupo || row.Capacidad || row.max_capacity,
-      Alumnos_Matriculados: row.Alumnos_Matriculados || row.Inscritos || row.Registrados || row.current_students
+      Asignatura: row.Asignatura || row['Nombre Asignatura'],
+      Nivel: row.Nivel || row.Semestre,
+      Paralelo: row.Paralelo,
+      Capacidad_Maxima: row.Capacidad_Maxima || row.Cupo || row.Capacidad,
+      Alumnos_Matriculados: row.Alumnos_Matriculados || row.Inscritos || row.Registrados
     };
 
-    // Validación de campos críticos para AWS Academy [cite: 2026-01-06]
+    // Validación de campos mínimos obligatorios [cite: 2026-01-18]
     if (!mapping.Facultad || !mapping.Asignatura || mapping.Capacidad_Maxima === undefined) {
-      this.logger.warn('Skipping invalid row: Missing mandatory fields');
-      throw new BadRequestException('Formato de fila inválido');
+      throw new BadRequestException('Fila de Excel con formato incompatible o datos faltantes.');
     }
 
     return mapping;
   }
 }
-
