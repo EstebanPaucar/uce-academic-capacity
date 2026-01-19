@@ -17,67 +17,72 @@ export class AppService {
   }
 
   async saveAcademicData(data: any): Promise<any> {
-    try {
-      // 1. Lógica de Memoria: Si el campo viene, actualizamos; si no, usamos el anterior [cite: 2026-01-18]
-      if (data.Facultad) this.lastFaculty = String(data.Facultad).trim();
+      try {
+        // 1. Detección de Facultad (Busca en varios nombres posibles) [cite: 2026-01-18]
+        const currentFac = data.Facultad || data['__EMPTY_2'];
+        if  (currentFac) this.lastFaculty = String(currentFac).trim();
       
-      // En el reporte UCE, la carrera suele venir en 'Unnamed: 6' si la columna 'Carrera' está vacía [cite: 2026-01-18]
-      const currentCareer = data.Carrera || data['Unnamed: 6'];
-      if (currentCareer) this.lastCareer = String(currentCareer).trim();
+       // 2. 🚩 DETECCIÓN DE CARRERA BLINDADA [cite: 2026-01-19]
+        // Buscamos en todas las columnas donde la UCE suele poner la carrera
+        const currentCareer = data.Carrera || 
+                              data['Unnamed: 6'] || 
+                              data['__EMPTY_6'] || 
+                              data['__EMPTY_7'] || 
+                              data['Unnamed: 7'];
 
-      // 2. CORRECCIÓN DE CEROS: Mapeo de nombres exactos del reporte UCE [cite: 2026-01-18]
-      const asignatura = data.Asignatura || data['Nombre Asignatura'];
-      const cupoRaw = data['Cupo registrado'] || data.Cupo || 0;
-      const inscritosRaw = data['Estudiantes registrados'] || data.Inscritos || 0;
+        if (currentCareer) {
+          this.lastCareer = String(currentCareer).trim();
+        }
 
-      // Si no hay asignatura o facultad, saltamos la fila (posible fila vacía del Excel)
-      if (!asignatura || !this.lastFaculty) return null;
+        // 3. Mapeo de campos de la materia
+        const asignatura = data.Asignatura || data['Nombre Asignatura'] || data['__EMPTY_12'];
+        const cupoRaw = data['Cupo registrado'] || data.Cupo || data['__EMPTY_15'] || 0;
+        const inscritosRaw = data['Estudiantes registrados'] || data.Inscritos || data['__EMPTY_16'] || 0;
 
-      // 3. Persistencia de Facultad
-      const faculty = await this.prisma.faculty.upsert({
-        where: { name: this.lastFaculty },
-        update: {},
-        create: { name: this.lastFaculty }
-      });
+        // 4. Validación de seguridad [cite: 2026-01-18]
+        // Si no hay asignatura o la carrera sigue vacía, ignoramos la fila
+        if (!asignatura || !this.lastFaculty || !this.lastCareer || this.lastCareer === '') {
+          return null;
+        }
 
-      // 4. Persistencia de Carrera
-      const career = await this.prisma.career.upsert({
-        where: { name_facultyId: { name: this.lastCareer, facultyId: faculty.id } },
-        update: {},
-        create: { name: this.lastCareer, facultyId: faculty.id }
-      });
+        // 5. Persistencia (Facultad -> Carrera -> Curso)
+        const faculty = await this.prisma.faculty.upsert({
+          where: { name: this.lastFaculty },
+          update: {},
+          create: { name: this.lastFaculty }
+        });
 
-      // 5. Creación del Curso con valores reales
-// ... dentro de saveAcademicData
-// 4. Upsert del Curso (Evita duplicados) [cite: 2026-01-18]
-      return await this.prisma.course.upsert({
-        where: {
-    // Debe coincidir exactamente con el @@unique del esquema
-          name_parallel_level_careerId: {
+        const career = await this.prisma.career.upsert({
+          where: { name_facultyId: { name: this.lastCareer, facultyId: faculty.id } },
+          update: {},
+          create: { name: this.lastCareer, facultyId: faculty.id }
+        });
+
+        return await this.prisma.course.upsert({
+          where: {
+            name_parallel_level_careerId: {
+              name: String(asignatura).trim(),
+              parallel: data.Paralelo?.toString() || data['__EMPTY_11']?.toString() || 'N/A',
+              level: data.Nivel?.toString() || data['__EMPTY_10']?.toString() || 'N/A',
+              careerId: career.id
+            }
+          },
+          update: {
+            maxCapacity: parseInt(cupoRaw.toString()) || 0,
+            currentStudents: parseInt(inscritosRaw.toString()) || 0,
+          },
+          create: {
             name: String(asignatura).trim(),
-            parallel: data.Paralelo?.toString() || 'N/A',
-            level: data.Nivel?.toString() || 'N/A',
+            level: data.Nivel?.toString() || data['__EMPTY_10']?.toString() || 'N/A',
+            parallel: data.Paralelo?.toString() || data['__EMPTY_11']?.toString() || 'N/A',
+            maxCapacity: parseInt(cupoRaw.toString()) || 0,
+            currentStudents: parseInt(inscritosRaw.toString()) || 0,
             careerId: career.id
           }
-        },
-        update: {
-    // Si ya existe, actualizamos los números por si cambiaron [cite: 2026-01-18]
-          maxCapacity: parseInt(cupoRaw.toString()) || 0,
-          currentStudents: parseInt(inscritosRaw.toString()) || 0,
-        },
-        create: {
-          name: String(asignatura).trim(),
-          level: data.Nivel?.toString() || 'N/A',
-          parallel: data.Paralelo?.toString() || 'N/A',
-          maxCapacity: parseInt(cupoRaw.toString()) || 0,
-          currentStudents: parseInt(inscritosRaw.toString()) || 0,
-          careerId: career.id
-        }
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Error en base de datos: ${errorMessage}`);
-      throw error;
+        });
+      } catch (error) {
+        this.logger.error(`Error en base de datos: ${error instanceof Error ? error.message : String(error)}`);
+        throw error;
+      }
     }
-  }
 }
