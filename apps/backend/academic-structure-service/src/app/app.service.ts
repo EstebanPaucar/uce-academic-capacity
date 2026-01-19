@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class AppService {
-  private prisma = new PrismaClient(); // Lo ideal es inyectar un PrismaService
+  private prisma = new PrismaClient(); 
   private readonly logger = new Logger(AppService.name);
 
   // --- CONSULTA PARA EL FRONTEND ---
@@ -21,10 +21,12 @@ export class AppService {
   }
 
   // --- PROCESAMIENTO DEL ETL (EXCEL) ---
-  // Renombramos para coincidir con el controlador: saveAcademicData [cite: 2026-01-18]
-  async saveAcademicData(data: any) {
+  async saveAcademicData(rawData: any) {
     try {
-      // 1. Asegurar que la Facultad existe (Source: Excel column 'Facultad') [cite: 2026-01-18]
+      // 🚩 PASO CLAVE: Mapear y validar los datos del Excel antes de procesar [cite: 2026-01-18]
+      const data = this.validateHeaders(rawData);
+
+      // 1. Asegurar que la Facultad existe
       const faculty = await this.prisma.faculty.upsert({
         where: { name: data.Facultad },
         update: {},
@@ -34,7 +36,6 @@ export class AppService {
       // 2. Asegurar que la Carrera existe dentro de esa Facultad
       const career = await this.prisma.career.upsert({
         where: { 
-          // Suponiendo un índice compuesto name_facultyId en tu esquema
           name_facultyId: { name: data.Carrera, facultyId: faculty.id } 
         },
         update: {},
@@ -44,7 +45,7 @@ export class AppService {
         }
       });
 
-      // 3. Crear el Curso con los nombres de columna exactos del validador [cite: 2026-01-18]
+      // 3. Crear el Curso con los datos mapeados [cite: 2026-01-18]
       return await this.prisma.course.create({
         data: {
           name: data.Asignatura,
@@ -61,4 +62,27 @@ export class AppService {
       throw error;
     }
   }
+
+  // --- HELPER PARA COMPATIBILIDAD CON REPORTES UCE ---
+  private validateHeaders(row: any) {
+    // Este mapeo permite que el código entienda "Cupo" o "Capacidad" indistintamente [cite: 2026-01-18]
+    const mapping = {
+      Facultad: row.Facultad,
+      Carrera: row.Carrera,
+      Asignatura: row.Asignatura || row['Nombre Asignatura'] || row.subject,
+      Nivel: row.Nivel || row.Semestre || row.level,
+      Paralelo: row.Paralelo || row.parallel,
+      Capacidad_Maxima: row.Capacidad_Maxima || row.Cupo || row.Capacidad || row.max_capacity,
+      Alumnos_Matriculados: row.Alumnos_Matriculados || row.Inscritos || row.Registrados || row.current_students
+    };
+
+    // Validación de campos críticos para AWS Academy [cite: 2026-01-06]
+    if (!mapping.Facultad || !mapping.Asignatura || mapping.Capacidad_Maxima === undefined) {
+      this.logger.warn('Skipping invalid row: Missing mandatory fields');
+      throw new BadRequestException('Formato de fila inválido');
+    }
+
+    return mapping;
+  }
 }
+
