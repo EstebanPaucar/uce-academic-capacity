@@ -6,7 +6,7 @@ export class AppService {
   private prisma = new PrismaClient();
   private readonly logger = new Logger(AppService.name);
 
-  // 🚩 MEMORIA DE CONTEXTO: Para manejar celdas combinadas [cite: 2026-01-18]
+  // Memoria persistente para celdas combinadas
   private lastFaculty = '';
   private lastCareer = '';
 
@@ -17,72 +17,83 @@ export class AppService {
   }
 
   async saveAcademicData(data: any): Promise<any> {
-      try {
-        // 1. Detección de Facultad (Busca en varios nombres posibles) [cite: 2026-01-18]
-        const currentFac = data.Facultad || data['__EMPTY_2'];
-        if  (currentFac) this.lastFaculty = String(currentFac).trim();
+    try {
+      // 1. Convertimos a valores para manejar la desalineación de la UCE [cite: 2026-01-19]
+      const values = Object.values(data);
+
+      // 2. MAPEADO DE PRECISIÓN (Basado en el análisis del archivo real)
       
-       // 2. 🚩 DETECCIÓN DE CARRERA BLINDADA [cite: 2026-01-19]
-        // Buscamos en todas las columnas donde la UCE suele poner la carrera
-        const currentCareer = data.Carrera || 
-                              data['Unnamed: 6'] || 
-                              data['__EMPTY_6'] || 
-                              data['__EMPTY_7'] || 
-                              data['Unnamed: 7'];
+      // FACULTAD (Columna C -> Índice 2)
+      const currentFac = values[2] || data['Facultad'];
+      if (currentFac && String(currentFac).trim() !== '' && !String(currentFac).includes('__EMPTY')) {
+        this.lastFaculty = String(currentFac).trim();
+      }
 
-        if (currentCareer) {
-          this.lastCareer = String(currentCareer).trim();
+      // CARRERA (🚩 CORRECCIÓN: En datos está en Índice 6, en Header en Índice 7) [cite: 2026-01-19]
+      const currentCar = values[6] || values[7] || data['Carrera'];
+      if (currentCar && String(currentCar).trim() !== '' && !String(currentCar).includes('__EMPTY')) {
+        this.lastCareer = String(currentCar).trim();
+      }
+
+      // NIVEL (Columna K -> Índice 10) y PARALELO (Columna L -> Índice 11)
+      const nivel = values[10] || data['Nivel'] || 'N/A';
+      const paralelo = values[11] || data['Paralelo'] || 'N/A';
+
+      // ASIGNATURA (Columna M -> Índice 12)
+      const asignatura = values[12] || data['Asignatura'] || data['Nombre Asignatura'];
+
+      // CUPOS (Columna P -> Índice 15) y REGISTRADOS (Columna Q -> Índice 16)
+      const cupoRaw = values[15] || data['Cupo registrado'] || 0;
+      const inscritosRaw = values[16] || data['Estudiantes registrados'] || 0;
+
+      // 3. VALIDACIÓN DE INTEGRIDAD
+      if (!asignatura || String(asignatura).trim() === '' || !this.lastFaculty || !this.lastCareer) {
+        // Log preventivo para filas de relleno o errores de lectura
+        if (asignatura) {
+          this.logger.warn(`Omitiendo materia: ${asignatura} | Causa: Carrera o Facultad no detectada.`);
         }
+        return null;
+      }
 
-        // 3. Mapeo de campos de la materia
-        const asignatura = data.Asignatura || data['Nombre Asignatura'] || data['__EMPTY_12'];
-        const cupoRaw = data['Cupo registrado'] || data.Cupo || data['__EMPTY_15'] || 0;
-        const inscritosRaw = data['Estudiantes registrados'] || data.Inscritos || data['__EMPTY_16'] || 0;
+      // 4. PERSISTENCIA (Upsert para evitar duplicados en AWS Academy) [cite: 2026-01-06]
+      const faculty = await this.prisma.faculty.upsert({
+        where: { name: this.lastFaculty },
+        update: {},
+        create: { name: this.lastFaculty }
+      });
 
-        // 4. Validación de seguridad [cite: 2026-01-18]
-        // Si no hay asignatura o la carrera sigue vacía, ignoramos la fila
-        if (!asignatura || !this.lastFaculty || !this.lastCareer || this.lastCareer === '') {
-          return null;
-        }
+      const career = await this.prisma.career.upsert({
+        where: { name_facultyId: { name: this.lastCareer, facultyId: faculty.id } },
+        update: {},
+        create: { name: this.lastCareer, facultyId: faculty.id }
+      });
 
-        // 5. Persistencia (Facultad -> Carrera -> Curso)
-        const faculty = await this.prisma.faculty.upsert({
-          where: { name: this.lastFaculty },
-          update: {},
-          create: { name: this.lastFaculty }
-        });
-
-        const career = await this.prisma.career.upsert({
-          where: { name_facultyId: { name: this.lastCareer, facultyId: faculty.id } },
-          update: {},
-          create: { name: this.lastCareer, facultyId: faculty.id }
-        });
-
-        return await this.prisma.course.upsert({
-          where: {
-            name_parallel_level_careerId: {
-              name: String(asignatura).trim(),
-              parallel: data.Paralelo?.toString() || data['__EMPTY_11']?.toString() || 'N/A',
-              level: data.Nivel?.toString() || data['__EMPTY_10']?.toString() || 'N/A',
-              careerId: career.id
-            }
-          },
-          update: {
-            maxCapacity: parseInt(cupoRaw.toString()) || 0,
-            currentStudents: parseInt(inscritosRaw.toString()) || 0,
-          },
-          create: {
+      return await this.prisma.course.upsert({
+        where: {
+          name_parallel_level_careerId: {
             name: String(asignatura).trim(),
-            level: data.Nivel?.toString() || data['__EMPTY_10']?.toString() || 'N/A',
-            parallel: data.Paralelo?.toString() || data['__EMPTY_11']?.toString() || 'N/A',
-            maxCapacity: parseInt(cupoRaw.toString()) || 0,
-            currentStudents: parseInt(inscritosRaw.toString()) || 0,
+            parallel: String(paralelo).trim(),
+            level: String(nivel).trim(),
             careerId: career.id
           }
-        });
-      } catch (error) {
-        this.logger.error(`Error en base de datos: ${error instanceof Error ? error.message : String(error)}`);
-        throw error;
-      }
+        },
+        update: {
+          maxCapacity: parseInt(cupoRaw.toString()) || 0,
+          currentStudents: parseInt(inscritosRaw.toString()) || 0,
+        },
+        create: {
+          name: String(asignatura).trim(),
+          level: String(nivel).trim(),
+          parallel: String(paralelo).trim(),
+          maxCapacity: parseInt(cupoRaw.toString()) || 0,
+          currentStudents: parseInt(inscritosRaw.toString()) || 0,
+          careerId: career.id
+        }
+      });
+
+    } catch (error) {
+      this.logger.error(`Error de persistencia: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
     }
+  }
 }
