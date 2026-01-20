@@ -2,24 +2,28 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"math"
 	"os"
 
-	"github.com/streadway/amqp" // Driver estándar para RabbitMQ
+	"github.com/streadway/amqp"
 )
 
-// Estructuras de datos sincronizadas con tu esquema de TypeScript [cite: 2026-01-20]
+// 1. ESTRUCTURA DE ENTRADA (El "Sobre" que envía Ingestion Service)
+type IncomingNestJSEvent struct {
+	Pattern string         `json:"pattern"`
+	Data    IncomingCourse `json:"data"` // Aquí adentro está la materia real
+}
+
+// Estructura de la materia (La "Carta")
 type IncomingCourse struct {
-	Name            string `json:"name"`
-	Parallel        string `json:"parallel"`
-	Level           string `json:"level"`
-	CurrentStudents int    `json:"currentStudents"`
-	MaxCapacity     int    `json:"maxCapacity"`
-	// Se incluyen campos adicionales del Excel para no perder trazabilidad
-	Faculty string `json:"Facultad"`
-	Career  string `json:"Carrera"`
+    Name            string `json:"name"`            // Coincide con cleanData.name
+    Parallel        string `json:"parallel"`        // Coincide con cleanData.parallel
+    Level           string `json:"level"`           // Coincide con cleanData.level
+    CurrentStudents int    `json:"currentStudents"` // Coincide con cleanData.currentStudents
+    MaxCapacity     int    `json:"maxCapacity"`     // Coincide con cleanData.maxCapacity
+    Faculty         string `json:"Facultad"`        // Coincide con cleanData.Facultad
+    Career          string `json:"Carrera"`         // Coincide con cleanData.Carrera
 }
 
 type CalculatedResult struct {
@@ -28,8 +32,13 @@ type CalculatedResult struct {
 	OccupancyPercentage float64 `json:"occupancyPercentage"`
 }
 
+// Estructura de SALIDA (El "Sobre" para el siguiente servicio)
+type OutputNestJSMessage struct {
+	Pattern string           `json:"pattern"`
+	Data    CalculatedResult `json:"data"`
+}
+
 func main() {
-	// 1. Configuración de conexión compatible con AWS Academy [cite: 2026-01-06]
 	rmqURL := os.Getenv("RABBITMQ_URL")
 	if rmqURL == "" {
 		rmqURL = "amqp://guest:guest@localhost:5672/"
@@ -43,7 +52,6 @@ func main() {
 	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
 
-	// 2. Declaración de colas (Pipeline de Eventos) [cite: 649, 650]
 	qInput, _ := ch.QueueDeclare("academic_data_queue", true, false, false, false, nil)
 	qOutput, _ := ch.QueueDeclare("calculation_results_queue", true, false, false, false, nil)
 
@@ -52,15 +60,21 @@ func main() {
 
 	forever := make(chan bool)
 
-	// 3. PROCESAMIENTO PARALELO CON GOROUTINES 
 	go func() {
 		for d := range msgs {
-			// Lanzamos una Goroutine por cada mensaje para cálculo simultáneo [cite: 264]
 			go func(msg amqp.Delivery) {
-				var course IncomingCourse
-				json.Unmarshal(msg.Body, &course)
+				// 🚩 PASO 1: ABRIR EL SOBRE DE ENTRADA
+				var event IncomingNestJSEvent
+				err := json.Unmarshal(msg.Body, &event)
+				if err != nil {
+					log.Printf("❌ Error al leer JSON de entrada: %s", err)
+					return
+				}
 
-				// Lógica del Motor de Cálculo (Fórmula: Inscritos / Cupo) [cite: 119, 164]
+				// Extraemos la materia real
+				course := event.Data 
+
+				// Lógica del Motor (Inscritos / Cupo)
 				percentage := 0.0
 				status := "DISPONIBLE"
 
@@ -68,19 +82,18 @@ func main() {
 					percentage = (float64(course.CurrentStudents) / float64(course.MaxCapacity)) * 100
 					percentage = math.Round(percentage*100) / 100
 
-					// Aplicación de Regla Normativa FE19 (Semaforización) [cite: 165, 166]
 					if percentage >= 100 {
 						status = "SATURADO"
-					} else if percentage >= 80 { // Umbral de alerta configurado [cite: 2026-01-20]
+					} else if percentage >= 80 { 
 						status = "ALERTA"
 					}
 					
-					// Validación específica del Reglamento: Mínimo 35 estudiantes [cite: 89, 109]
 					if course.CurrentStudents < 35 {
 						status = "ALERTA_NORMATIVA" 
 					}
 				} else {
-					status = "DESBORDADO"
+					// Solo es desbordado si realmente vino con 0 de capacidad
+					status = "DESBORDADO" 
 					percentage = 100.0
 				}
 
@@ -90,19 +103,26 @@ func main() {
 					OccupancyPercentage: percentage,
 				}
 
-				// Enviar resultado a la siguiente etapa del pipeline [cite: 147, 180]
-				body, _ := json.Marshal(result)
+				// 🚩 PASO 2: METER EN SOBRE DE SALIDA
+				nestMessage := OutputNestJSMessage{
+					Pattern: "course_created", 
+					Data:    result,
+				}
+
+				body, _ := json.Marshal(nestMessage)
+				
 				ch.Publish("", qOutput.Name, false, false, amqp.Publishing{
 					ContentType: "application/json",
 					Body:        body,
 				})
 
+				// Log corregido para ver el nombre real
 				log.Printf("✅ Calculado: %s (%v%%) -> %s", course.Name, percentage, status)
 			}(d)
 		}
 	}()
 
-	log.Printf("--- 🐹 Go Calculation Service Waiting for messages ---")
+	log.Printf("--- 🐹 Go Calculation Service Ready ---")
 	<-forever
 }
 

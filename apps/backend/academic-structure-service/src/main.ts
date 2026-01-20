@@ -3,36 +3,36 @@ import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AppModule } from './app/app.module';
 
 async function bootstrap() {
-  // 1. Crear la instancia de la aplicación HTTP (Puerto 3001)
   const app = await NestFactory.create(AppModule);
 
-  // 2. Configuraciones globales de red
   app.enableCors();
   app.setGlobalPrefix('api');
 
-  // 3. Conectar RabbitMQ como microservicio (Arquitectura Híbrida)
+  // 🚩 CORRECCIÓN: Conexión al final del pipeline
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.RMQ,
     options: {
-      // Priorizamos variables de entorno para AWS Academy [cite: 2026-01-06]
       urls: [process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672'],
-      queue: 'academic_data_queue',
+      // Escuchamos la cola de resultados procesados por Go
+      queue: 'calculation_results_queue', 
       
-      // 🚩 CAMBIO CRÍTICO: Necesario para que channel.ack() funcione en el controlador [cite: 2026-01-18]
+      // Confirmación manual obligatoria para evitar pérdida de datos [cite: 2026-01-18]
       noAck: false, 
       
       queueOptions: { 
-        durable: true // Garantiza persistencia en el entorno Learner Lab [cite: 2026-01-06]
+        // Persistencia garantizada para AWS Academy [cite: 2026-01-06]
+        durable: true 
       },
     },
   });
 
-  // 4. Iniciar AMBOS: Microservicio (Eventos) y Servidor HTTP (API REST)
   await app.startAllMicroservices();
-  await app.listen(3001);
+  const port = process.env.PORT || 3001;
+  await app.listen(port);
   
-  console.log('--- 🚀 Academic Structure Service is running on port 3001 ---');
-  console.log('--- 📦 Listening to queue: academic_data_queue (Manual Ack Enabled) ---');
+  console.log(`--- 🚀 Academic Structure Service is running on port ${port} ---`);
+  // Log actualizado para reflejar la nueva cola
+  console.log('--- 📦 Listening to results from Go: calculation_results_queue ---');
 }
 
 bootstrap();
