@@ -5,79 +5,109 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"sync" // Para manejo de Goroutines
+	"os"
+
+	"github.com/streadway/amqp" // Driver estándar para RabbitMQ
 )
 
-// CapacityStatus coincide con tu Enum de TypeScript [cite: 2026-01-20]
-const (
-	AVAILABLE = "DISPONIBLE"
-	WARNING   = "ALERTA"
-	SATURATED  = "SATURADO"
-	OVERFLOW  = "DESBORDADO"
-)
-
-type CourseData struct {
+// Estructuras de datos sincronizadas con tu esquema de TypeScript [cite: 2026-01-20]
+type IncomingCourse struct {
 	Name            string `json:"name"`
+	Parallel        string `json:"parallel"`
+	Level           string `json:"level"`
 	CurrentStudents int    `json:"currentStudents"`
 	MaxCapacity     int    `json:"maxCapacity"`
+	// Se incluyen campos adicionales del Excel para no perder trazabilidad
+	Faculty string `json:"Facultad"`
+	Career  string `json:"Carrera"`
 }
 
-type CalculationResult struct {
-	Name       string  `json:"name"`
-	Status     string  `json:"status"`
-	Percentage float64 `json:"percentage"`
-}
-
-// El "Cerebro" en Go con procesamiento paralelo [cite: 184, 469]
-func calculateCapacity(course CourseData, wg *sync.WaitGroup, results chan<- CalculationResult) {
-	defer wg.Done() // Indica que esta Goroutine terminó
-
-	percentage := 0.0
-	status := AVAILABLE
-
-	if course.MaxCapacity == 0 {
-		status = OVERFLOW
-		percentage = 100.0
-	} else {
-		percentage = (float64(course.CurrentStudents) / float64(course.MaxCapacity)) * 100
-		percentage = math.Round(percentage*100) / 100
-
-		if percentage >= 100 {
-			status = SATURATED
-		} else if percentage >= 80 { // Umbral de tu reglamento FE19 [cite: 89, 243]
-			status = WARNING
-		}
-	}
-
-	results <- CalculationResult{
-		Name:       course.Name,
-		Status:     status,
-		Percentage: percentage,
-	}
+type CalculatedResult struct {
+	IncomingCourse
+	Status              string  `json:"status"`
+	OccupancyPercentage float64 `json:"occupancyPercentage"`
 }
 
 func main() {
-	// Simulación de carga masiva de datos [cite: 117]
-	courses := []CourseData{
-		{Name: "Software Architecture", CurrentStudents: 35, MaxCapacity: 35},
-		{Name: "Distributed Systems", CurrentStudents: 30, MaxCapacity: 40},
+	// 1. Configuración de conexión compatible con AWS Academy [cite: 2026-01-06]
+	rmqURL := os.Getenv("RABBITMQ_URL")
+	if rmqURL == "" {
+		rmqURL = "amqp://guest:guest@localhost:5672/"
 	}
 
-	var wg sync.WaitGroup
-	results := make(chan CalculationResult, len(courses))
+	conn, err := amqp.Dial(rmqURL)
+	failOnError(err, "Failed to connect to RabbitMQ")
+	defer conn.Close()
 
-	fmt.Println("🚀 Iniciando cálculo paralelo de capacidad (Go Goroutines)...")
+	ch, err := conn.Channel()
+	failOnError(err, "Failed to open a channel")
+	defer ch.Close()
 
-	for _, course := range courses {
-		wg.Add(1)
-		go calculateCapacity(course, &wg, results) // Dispara el hilo paralelo [cite: 326]
-	}
+	// 2. Declaración de colas (Pipeline de Eventos) [cite: 649, 650]
+	qInput, _ := ch.QueueDeclare("academic_data_queue", true, false, false, false, nil)
+	qOutput, _ := ch.QueueDeclare("calculation_results_queue", true, false, false, false, nil)
 
-	wg.Wait()
-	close(results)
+	msgs, err := ch.Consume(qInput.Name, "", true, false, false, false, nil)
+	failOnError(err, "Failed to register a consumer")
 
-	for res := range results {
-		resJSON, _ := json.Marshal(res)
-		fmt.Printf("✅ Resultado: %s\n", string(resJSON))
+	forever := make(chan bool)
+
+	// 3. PROCESAMIENTO PARALELO CON GOROUTINES 
+	go func() {
+		for d := range msgs {
+			// Lanzamos una Goroutine por cada mensaje para cálculo simultáneo [cite: 264]
+			go func(msg amqp.Delivery) {
+				var course IncomingCourse
+				json.Unmarshal(msg.Body, &course)
+
+				// Lógica del Motor de Cálculo (Fórmula: Inscritos / Cupo) [cite: 119, 164]
+				percentage := 0.0
+				status := "DISPONIBLE"
+
+				if course.MaxCapacity > 0 {
+					percentage = (float64(course.CurrentStudents) / float64(course.MaxCapacity)) * 100
+					percentage = math.Round(percentage*100) / 100
+
+					// Aplicación de Regla Normativa FE19 (Semaforización) [cite: 165, 166]
+					if percentage >= 100 {
+						status = "SATURADO"
+					} else if percentage >= 80 { // Umbral de alerta configurado [cite: 2026-01-20]
+						status = "ALERTA"
+					}
+					
+					// Validación específica del Reglamento: Mínimo 35 estudiantes [cite: 89, 109]
+					if course.CurrentStudents < 35 {
+						status = "ALERTA_NORMATIVA" 
+					}
+				} else {
+					status = "DESBORDADO"
+					percentage = 100.0
+				}
+
+				result := CalculatedResult{
+					IncomingCourse:      course,
+					Status:              status,
+					OccupancyPercentage: percentage,
+				}
+
+				// Enviar resultado a la siguiente etapa del pipeline [cite: 147, 180]
+				body, _ := json.Marshal(result)
+				ch.Publish("", qOutput.Name, false, false, amqp.Publishing{
+					ContentType: "application/json",
+					Body:        body,
+				})
+
+				log.Printf("✅ Calculado: %s (%v%%) -> %s", course.Name, percentage, status)
+			}(d)
+		}
+	}()
+
+	log.Printf("--- 🐹 Go Calculation Service Waiting for messages ---")
+	<-forever
+}
+
+func failOnError(err error, msg string) {
+	if err != nil {
+		log.Fatalf("%s: %s", msg, err)
 	}
 }
