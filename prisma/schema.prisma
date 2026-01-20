@@ -53,18 +53,26 @@ model Career {
   @@map("careers")
 }
 
-// Entidad para los cursos basada en tu Excel [cite: 2026-01-18]
+
 model Course {
-  id              Int      @id @default(autoincrement())
+  id              Int      @id @default(autoincrement()) // Se mantiene tu ID original
   name            String
   level           String
   parallel        String
   maxCapacity     Int
   currentStudents Int
-  careerId        Int
+  
+  // 🚩 NUEVOS CAMPOS PARA EL MOTOR DE CÁLCULO
+  occupancyPercentage Float    @default(0.0)
+  status              String   @default("DISPONIBLE") // 'DISPONIBLE', 'ALERTA', 'SATURADO'
+  
+  // Campos de auditoría (Recomendado por tu informe técnico)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  careerId        Int      // Se mantiene la relación por Int
   career          Career   @relation(fields: [careerId], references: [id])
 
-  // 🚩 CLAVE ÚNICA COMPUESTA: Evita que existan dos registros iguales [cite: 2026-01-18]
   @@unique([name, parallel, level, careerId])
 }
 
@@ -77,3 +85,4 @@ model BusinessRule {
 
   @@map("business_rules")
 }
+
