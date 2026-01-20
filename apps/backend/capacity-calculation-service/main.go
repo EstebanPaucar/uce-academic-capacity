@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -12,21 +14,19 @@ type Section struct {
 	Name string
 }
 
+// Función que realiza el cálculo pesado (Goroutine)
 func calculateCapacity(section Section, wg *sync.WaitGroup) {
 	defer wg.Done()
+	log.Printf("[Calculation] Processing: %s (ID: %d)\n", section.Name, section.ID)
 	
-	fmt.Printf("[Calculation] Starting parallel processing for: %s (ID: %d)\n", section.Name, section.ID)
-	
-	// Simulación del cálculo pesado basado en las reglas de Redis
+	// Simulación de procesamiento intensivo
 	time.Sleep(2 * time.Second) 
 	
-	fmt.Printf("[Success] Capacity calculated for %s\n", section.Name)
+	log.Printf("[Success] Capacity calculated for %s\n", section.Name)
 }
 
-func main() {
-	fmt.Println("UCE Academic Capacity - Calculation Engine (Go) is starting...")
-
-	// Simulamos una carga de datos desde el Ingestion Service
+// Handler para activar el cálculo vía HTTP
+func calculationHandler(w http.ResponseWriter, r *http.Request) {
 	sections := []Section{
 		{ID: 101, Name: "Programación Distribuida - Paralelo A"},
 		{ID: 102, Name: "Arquitectura de Software - Paralelo B"},
@@ -34,15 +34,34 @@ func main() {
 	}
 
 	var wg sync.WaitGroup
+	log.Println("--- Starting Parallel Processing via HTTP Request ---")
 
-	fmt.Println("--- Starting Parallel Goroutines ---")
 	for _, section := range sections {
 		wg.Add(1)
-		// Ejecución en paralelo usando Goroutines
 		go calculateCapacity(section, &wg)
 	}
 
-	// Esperar a que todas las goroutines terminen (RNF de Consistencia)
 	wg.Wait()
-	fmt.Println("--- All calculations completed successfully ---")
+	fmt.Fprintf(w, "Cálculo de capacidad UCE completado exitosamente en paralelo.")
+}
+
+func main() {
+	// Definimos el puerto 3004 según nuestro mapa de arquitectura
+	port := "3004"
+
+	// Definimos las rutas (endpoints)
+	http.HandleFunc("/calculate", calculationHandler)
+	
+	// Health Check simple
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "Capacity Calculation Service (Go) is Online")
+	})
+
+	log.Printf("🚀 UCE Calculation Engine (Go) running on http://localhost:%s\n", port)
+	
+	// Iniciamos el servidor
+	err := http.ListenAndServe(":"+port, nil)
+	if err != nil {
+		log.Fatal("Error starting server: ", err)
+	}
 }
