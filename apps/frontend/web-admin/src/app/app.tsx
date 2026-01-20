@@ -12,7 +12,7 @@ export function App() {
     fetch(`${STRUCTURE_SERVICE_URL}/api/structure`)
       .then(res => res.json())
       .then(json => {
-        console.log("Datos recibidos del servidor:", json); // Para depuración
+        console.log("Datos recibidos:", json);
         setData(json);
       })
       .catch(err => console.error("Error cargando tabla:", err));
@@ -47,24 +47,23 @@ export function App() {
   };
 
   // --- LÓGICA DE FILTRADO SEGURA ---
-  // Usamos ?. para que si algo viene nulo no rompa la aplicación
   const filteredData = data?.map((faculty: any) => ({
     ...faculty,
     careers: faculty.careers?.map((career: any) => ({
       ...career,
       courses: career.courses?.filter((course: any) =>
         course.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        career.name?.toLowerCase().includes(searchTerm.toLowerCase())
+        career.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        faculty.name?.toLowerCase().includes(searchTerm.toLowerCase()) // Ahora también busca por Facultad
       )
     })).filter((career: any) => career.courses?.length > 0)
   })).filter((faculty: any) => faculty.careers?.length > 0);
 
-  // --- SEMÁFORO DE CAPACIDAD ---
   const getCapacityColor = (current: number, max: number) => {
     const percentage = (current / max) * 100;
-    if (percentage >= 100) return '#d9534f'; // Rojo (Saturado)
-    if (percentage >= 80) return '#f0ad4e';  // Naranja (Alerta)
-    return '#5cb85c'; // Verde (Disponible)
+    if (percentage >= 100) return '#d9534f'; 
+    if (percentage >= 80) return '#f0ad4e';  
+    return '#5cb85c'; 
   };
 
   return (
@@ -85,10 +84,10 @@ export function App() {
         <div style={{ display: 'flex', gap: '10px' }}>
           <input 
             type="text" 
-            placeholder="Filtrar por materia o carrera..." 
+            placeholder="Buscar por Facultad, Carrera o Materia..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc', width: '250px' }}
+            style={{ padding: '10px', borderRadius: '4px', border: '1px solid #ccc', width: '300px' }}
           />
           <button 
             onClick={handleButtonClick} 
@@ -104,6 +103,7 @@ export function App() {
       <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: 'white', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}>
         <thead>
           <tr style={{ backgroundColor: '#003366', color: 'white' }}>
+            <th style={{ padding: '12px' }}>Facultad</th> {/* 🚩 Columna Restaurada */}
             <th style={{ padding: '12px' }}>Carrera</th>
             <th style={{ padding: '12px' }}>Asignatura</th>
             <th style={{ padding: '12px' }}>Nivel / Paralelo</th>
@@ -118,6 +118,8 @@ export function App() {
               faculty.careers?.map((career: any) => 
                 career.courses?.map((course: any) => (
                   <tr key={course.id} style={{ textAlign: 'center', borderBottom: '1px solid #ddd' }}>
+                    {/* 🚩 Datos de Facultad */}
+                    <td style={{ padding: '10px', color: '#555', fontWeight: 'bold' }}>{faculty.name}</td>
                     <td style={{ padding: '10px' }}>{career.name}</td>
                     <td style={{ padding: '10px', fontWeight: 'bold' }}>{course.name}</td>
                     <td style={{ padding: '10px' }}>{course.level} - {course.parallel}</td>
@@ -143,8 +145,8 @@ export function App() {
             )
           ) : (
             <tr>
-              <td colSpan={6} style={{ textAlign: 'center', padding: '30px', color: '#888' }}>
-                {searchTerm ? "No se encontraron resultados para tu búsqueda." : "Esperando carga de datos de la base de datos..."}
+              <td colSpan={7} style={{ textAlign: 'center', padding: '30px', color: '#888' }}>
+                {searchTerm ? "No se encontraron resultados." : "Esperando carga de datos..."}
               </td>
             </tr>
           )}
