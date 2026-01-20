@@ -6,63 +6,33 @@ export class AppService {
   private prisma = new PrismaClient();
   private readonly logger = new Logger(AppService.name);
 
-  // Memoria persistente para procesar celdas combinadas del Excel de la UCE 
-  private lastFaculty = '';
-  private lastCareer = '';
-
-  /**
-   * 🚩 MÉTODO RESTAURADO: getStructure
-   * Permite que el Frontend consulte la jerarquía académica completa[cite: 224].
-   */
   async getStructure() {
     return this.prisma.faculty.findMany({
-      include: { 
-        careers: { 
-          include: { 
-            courses: true 
-          } 
-        } 
-      }
+      include: { careers: { include: { courses: true } } }
     });
   }
 
-  /**
-   * Guarda los datos académicos procesados por el motor de Go[cite: 102, 147].
-   */
+  private getEcuadorTime(): Date {
+    const now = new Date();
+    return new Date(now.getTime() - (5 * 60 * 60 * 1000));
+  }
+
   async saveAcademicData(data: any): Promise<any> {
+    const facultyName = data.Facultad || data.Faculty;
+    const careerName = data.Carrera || data.Career;
+    
+    // Obtenemos la hora corregida
+    const ecuadorNow = this.getEcuadorTime();
+
+    if (!facultyName || !careerName) return;
+
     try {
-      // 1. Identificación de jerarquía (Facultad y Carrera)
-      const values = Object.values(data);
-      const currentFac = values[2] || data['Facultad'] || data.Faculty;
-      if (currentFac && String(currentFac).trim() !== '' && !String(currentFac).includes('__EMPTY')) {
-        this.lastFaculty = String(currentFac).trim();
-      }
+      // Guardar Facultad de forma segura
+      const faculty = await this.upsertFacultySafe(String(facultyName).trim());
+      // Guardar Carrera de forma segura
+      const career = await this.upsertCareerSafe(String(careerName).trim(), faculty.id);
 
-      const currentCar = values[6] || values[7] || data['Carrera'] || data.Career;
-      if (currentCar && String(currentCar).trim() !== '' && !String(currentCar).includes('__EMPTY')) {
-        this.lastCareer = String(currentCar).trim();
-      }
-
-      // 2. Validación mínima de integridad académica [cite: 161]
-      if (!this.lastFaculty || !this.lastCareer) {
-        this.logger.warn(`Omitiendo registro: Facultad o Carrera no detectada.`);
-        return null;
-      }
-
-      // 3. Persistencia jerárquica en PostgreSQL (Integridad ACID) [cite: 187, 225]
-      const faculty = await this.prisma.faculty.upsert({
-        where: { name: this.lastFaculty },
-        update: {},
-        create: { name: this.lastFaculty }
-      });
-
-      const career = await this.prisma.career.upsert({
-        where: { name_facultyId: { name: this.lastCareer, facultyId: faculty.id } },
-        update: {},
-        create: { name: this.lastCareer, facultyId: faculty.id }
-      });
-
-      // 4. Upsert del Curso con estados calculados por el motor de Go [cite: 102, 119]
+      // Guardar Curso con la hora correcta
       return await this.prisma.course.upsert({
         where: {
           name_parallel_level_careerId: {
@@ -75,9 +45,9 @@ export class AppService {
         update: {
           maxCapacity: data.maxCapacity,
           currentStudents: data.currentStudents,
-          status: data.status, // 🚩 Proviene de Go
-          occupancyPercentage: data.occupancyPercentage, // 🚩 Proviene de Go
-          updatedAt: new Date()
+          status: data.status,
+          occupancyPercentage: data.occupancyPercentage,
+          updatedAt: ecuadorNow // 🕒 HORA ECUADOR
         },
         create: {
           name: String(data.name).trim(),
@@ -87,13 +57,54 @@ export class AppService {
           currentStudents: data.currentStudents,
           careerId: career.id,
           status: data.status,
-          occupancyPercentage: data.occupancyPercentage
+          occupancyPercentage: data.occupancyPercentage,
+          createdAt: ecuadorNow, // 🕒 HORA ECUADOR
+          updatedAt: ecuadorNow  // 🕒 HORA ECUADOR
         }
       });
+
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Error de persistencia: ${errorMessage}`);
-      throw error;
+      // 🚩 CORRECCIÓN AQUÍ: Casteamos 'error' a 'any' para leer el mensaje
+      const msg = (error as any).message || String(error);
+      this.logger.error(`❌ Error persistiendo ${data.name}: ${msg}`);
+      // No lanzamos el error (throw) para que el proceso continúe con la siguiente materia
+      return null;
+    }
+  }
+
+  // --- MÉTODOS AUXILIARES ANTI-RACE CONDITION ---
+
+  private async upsertFacultySafe(name: string) {
+    try {
+      return await this.prisma.faculty.upsert({
+        where: { name },
+        update: {},
+        create: { name },
+      });
+    } catch (e) {
+      // 🚩 CORRECCIÓN AQUÍ: Casteamos 'e' a 'any' para leer .code
+      if ((e as any).code === 'P2002') {
+        return await this.prisma.faculty.findUniqueOrThrow({ where: { name } });
+      }
+      throw e;
+    }
+  }
+
+  private async upsertCareerSafe(name: string, facultyId: number) {
+    try {
+      return await this.prisma.career.upsert({
+        where: { name_facultyId: { name, facultyId } },
+        update: {},
+        create: { name, facultyId },
+      });
+    } catch (e) {
+      // 🚩 CORRECCIÓN AQUÍ: Casteamos 'e' a 'any' para leer .code
+      if ((e as any).code === 'P2002') {
+        return await this.prisma.career.findUniqueOrThrow({ 
+          where: { name_facultyId: { name, facultyId } } 
+        });
+      }
+      throw e;
     }
   }
 }
