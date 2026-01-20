@@ -3,7 +3,6 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ClientProxy } from '@nestjs/microservices';
 import { AppService } from './app.service';
 import { AuthGuard } from '@nestjs/passport';
-import { Request } from 'express'; // Importante para el tipado
 import 'multer';
 
 @Controller('ingestion')
@@ -11,7 +10,8 @@ export class AppController {
   private readonly logger = new Logger(AppController.name);
 
   constructor(
-    @Inject('INGESTION_SERVICE') private readonly client: ClientProxy,
+    // 🚩 CAMBIO: El nombre de la variable debe ser 'client' para que 'this.client' funcione
+    @Inject('AUDIT_SERVICE') private readonly client: ClientProxy, 
     private readonly appService: AppService
   ) {}
 
@@ -25,6 +25,7 @@ export class AppController {
     this.logger.log(`Recibidos ${body.records.length} registros manuales.`);
 
     body.records.forEach((row: any) => {
+      // Ahora 'this.client' sí existe
       this.client.emit('course_created', row);
     });
 
@@ -33,23 +34,21 @@ export class AppController {
 
   // 🚩 2. RUTA PARA ARCHIVOS REALES (EXCEL) PROTEGIDA
   @Post('upload-excel')
-  @UseGuards(AuthGuard('jwt')) // 🔒 Escudo JWT
-  @UseInterceptors(FileInterceptor('file')) // Solo uno, limpio
+  @UseGuards(AuthGuard('jwt')) 
+  @UseInterceptors(FileInterceptor('file'))
   async uploadFile(@UploadedFile() file: Express.Multer.File, @Req() req: any) {
     if (!file) {
       throw new BadRequestException('No se ha subido ningún archivo.');
     }
 
-    // 1. Procesar el Excel a JSON
     const records = this.appService.parseExcel(file.buffer);
 
-    // 2. Flujo de Datos: Enviar cada curso al Motor de Cálculo
     records.forEach((row: any) => {
+      // Envía datos al Motor de Cálculo (Go)
       this.client.emit('course_created', row);
     });
 
-    // 3. Flujo de Auditoría: Enviar un solo mensaje al Audit Service
-    // Usamos 'log_created' que es lo que el Audit Service espera
+    // Envía log al Audit Service (MongoDB)
     this.client.emit('log_created', {
       userId: req.user.userId,
       username: req.user.username,
