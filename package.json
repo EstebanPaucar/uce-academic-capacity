@@ -89,6 +89,6 @@
     "xlsx": "^0.18.5"
   },
   "prisma": {
-  "seed": "ts-node prisma/seed.ts"
-}
+    "seed": "ts-node prisma/seed.ts"
+  }
 }

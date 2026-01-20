@@ -1,8 +1,10 @@
-import { Controller, Post, UploadedFile, UseInterceptors, Inject, Logger, BadRequestException, Body } from '@nestjs/common';
+import { Controller, Post, UseGuards, UploadedFile, UseInterceptors, Inject, Logger, BadRequestException, Body } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ClientProxy } from '@nestjs/microservices';
 import { AppService } from './app.service';
 import 'multer';
+import { AuthGuard } from '@nestjs/passport';
+
 
 @Controller('ingestion')
 export class AppController {
@@ -38,6 +40,8 @@ export class AppController {
   // Esta ruta atiende el POST a /api/ingestion/upload-excel
   @Post('upload-excel')
   @UseInterceptors(FileInterceptor('file'))
+  @UseGuards(AuthGuard('jwt')) // 🔒 ESTE ES EL ESCUDO
+  @UseInterceptors(FileInterceptor('file'))
   async uploadFile(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('No se ha subido ningún archivo.');
@@ -54,7 +58,8 @@ export class AppController {
     return { 
       status: 'success', 
       totalProcessed: records.length,
-      message: 'Excel procesado y enviado a la cola' 
+      message: 'Archivo recibido y procesado con seguridad',
+      filename: file.originalname, 
     };
   }
 }
