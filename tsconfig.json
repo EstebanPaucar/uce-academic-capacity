@@ -38,6 +38,30 @@
     },
     {
       "path": "./apps/backend/capacity-management-service"
+    },
+    {
+      "path": "./apps/backend/audit-service-e2e"
+    },
+    {
+      "path": "./apps/backend/audit-service"
+    },
+    {
+      "path": "./apps/backend/notification-service-e2e"
+    },
+    {
+      "path": "./apps/backend/notification-service"
+    },
+    {
+      "path": "./apps/backend/analytics-service-e2e"
+    },
+    {
+      "path": "./apps/backend/analytics-service"
+    },
+    {
+      "path": "./apps/backend/request-service-e2e"
+    },
+    {
+      "path": "./apps/backend/request-service"
     }
   ]
 }

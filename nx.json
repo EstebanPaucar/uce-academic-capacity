@@ -90,7 +90,11 @@
         "apps/backend/academic-structure-service-e2e/**/*",
         "apps/backend/data-ingestion-service-e2e/**/*",
         "apps/backend/rules-configuration-service-e2e/**/*",
-        "apps/backend/capacity-management-service-e2e/**/*"
+        "apps/backend/capacity-management-service-e2e/**/*",
+        "apps/backend/audit-service-e2e/**/*",
+        "apps/backend/notification-service-e2e/**/*",
+        "apps/backend/analytics-service-e2e/**/*",
+        "apps/backend/request-service-e2e/**/*"
       ]
     }
   ],
