@@ -1,63 +1,49 @@
 import { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('--- Starting Database Seeding (UCE Data) ---');
+  console.log('🌱 Starting seeding...');
 
-  // 1. Crear Facultad
-  const faculty = await prisma.faculty.upsert({
-    where: { name: 'ARQUITECTURA Y URBANISMO' },
-    update: {},
-    create: { name: 'ARQUITECTURA Y URBANISMO' },
-  });
-
-  // 2. Crear Carrera
-  const career = await prisma.career.upsert({
-    where: { id: 1 }, // Usamos ID fijo para consistencia en pruebas
+  // 1. Crear Roles (Quitamos los nombres de variables innecesarios)
+  await prisma.role.upsert({
+    where: { id: 1 },
     update: {},
     create: {
       id: 1,
-      name: 'ARQUITECTURA (R)',
-      faculty_id: faculty.id,
+      name: 'ADMIN',
+      permissions: { all: true, upload: true, delete: true },
     },
   });
 
-  // 3. Crear Asignaturas (Datos reales del Excel)
-  const coursesData = [
-    {
-      name: 'FUNDAMENTOS DE EXPRESIÓN PLÁSTICA',
-      level: 'PRIMERO',
-      parallel: 'A1-001',
-      max_capacity: 30,
-      current_students: 32,
+  await prisma.role.upsert({
+    where: { id: 2 },
+    update: {},
+    create: {
+      id: 2,
+      name: 'DIRECTOR',
+      permissions: { all: false, upload: true, delete: false },
     },
-    {
-      name: 'FUNDAMENTOS DE LA FÍSICA APLICADA AL DISEÑO Y ARQUITECTURA I',
-      level: 'PRIMERO',
-      parallel: 'A1-001',
-      max_capacity: 40,
-      current_students: 36,
-    },
-    {
-      name: 'FUNDAMENTOS DE LA MATEMÁTICA APLICADA AL DISEÑO Y ARQUITECTURA I',
-      level: 'PRIMERO',
-      parallel: 'A1-001',
-      max_capacity: 30,
-      current_students: 26,
-    },
-  ];
+  });
 
-  for (const item of coursesData) {
-    await prisma.course.create({
-      data: {
-        ...item,
-        career_id: career.id,
-      },
-    });
-  }
+  console.log('✅ Roles created: ADMIN, DIRECTOR');
 
-  console.log(`--- Seed finished: Created Faculty, Career and ${coursesData.length} Courses ---`);
+  // 2. Crear Usuario Administrador inicial
+  const adminPassword = await bcrypt.hash('admin123', 10);
+  
+  await prisma.user.upsert({
+    where: { email: 'admin@uce.edu.ec' },
+    update: {},
+    create: {
+      username: 'admin_uce',
+      email: 'admin@uce.edu.ec',
+      passwordHash: adminPassword,
+      roleId: 1, // Usamos directamente el ID 1 (ADMIN)
+    },
+  });
+
+  console.log('✅ Default ADMIN user created: admin@uce.edu.ec / admin123');
 }
 
 main()
