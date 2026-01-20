@@ -87,5 +87,8 @@
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.0",
     "xlsx": "^0.18.5"
-  }
+  },
+  "prisma": {
+  "seed": "ts-node prisma/seed.ts"
+}
 }
