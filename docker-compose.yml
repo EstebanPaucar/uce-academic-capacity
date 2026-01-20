@@ -17,11 +17,13 @@ services:
   # Uso: Logs de auditoría y trazabilidad del sistema [cite: 156, 280, 281]
   mongo-db:
     image: mongo:latest
-    container_name: uce_mongo
     ports:
       - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: uce_audit_db
     volumes:
       - mongo_data:/data/db
+ 
 
   # 3. Caché y Sesiones (Redis)
   # Uso: Gestión de sesiones y caché de reglas de negocio [cite: 157, 282, 283]
