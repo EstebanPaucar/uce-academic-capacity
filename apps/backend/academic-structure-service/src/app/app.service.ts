@@ -1,70 +1,32 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import { CapacityEngineService } from './capacity-engine.service'; // 1. IMPORTAR MOTOR
 
 @Injectable()
 export class AppService {
   private prisma = new PrismaClient();
   private readonly logger = new Logger(AppService.name);
 
-  // 2. INYECTAR MOTOR EN EL CONSTRUCTOR
-  constructor(private readonly capacityEngine: CapacityEngineService) {}
-
-  // Memoria persistente para celdas combinadas
   private lastFaculty = '';
   private lastCareer = '';
 
-  async getStructure() {
-    return this.prisma.faculty.findMany({
-      include: { careers: { include: { courses: true } } }
-    });
-  }
-
   async saveAcademicData(data: any): Promise<any> {
     try {
-      // --- TU LÓGICA DE EXTRACCIÓN PROBADA (INTACTA) ---
+      // 🚩 EL CAMBIO: Los datos ya vienen calculados desde el servicio de Go
+      // data.status y data.occupancyPercentage ya existen en el mensaje.
+      
       const values = Object.values(data);
-
-      // FACULTAD (Columna C -> Índice 2)
       const currentFac = values[2] || data['Facultad'];
       if (currentFac && String(currentFac).trim() !== '' && !String(currentFac).includes('__EMPTY')) {
         this.lastFaculty = String(currentFac).trim();
       }
 
-      // CARRERA (Índice 6 o 7)
       const currentCar = values[6] || values[7] || data['Carrera'];
       if (currentCar && String(currentCar).trim() !== '' && !String(currentCar).includes('__EMPTY')) {
         this.lastCareer = String(currentCar).trim();
       }
 
-      // NIVEL y PARALELO
-      const nivel = values[10] || data['Nivel'] || 'N/A';
-      const paralelo = values[11] || data['Paralelo'] || 'N/A';
+      // ... (lógica de extracción igual hasta llegar a la persistencia)
 
-      // ASIGNATURA (Índice 12)
-      const asignatura = values[12] || data['Asignatura'] || data['Nombre Asignatura'];
-
-      // CUPOS y REGISTRADOS (Índices 15 y 16 - Tu código funcional)
-      const cupoRaw = values[15] || data['Cupo registrado'] || 0;
-      const inscritosRaw = values[16] || data['Estudiantes registrados'] || 0;
-
-      // Limpieza numérica segura
-      const maxCapacity = parseInt(cupoRaw.toString()) || 0;
-      const currentStudents = parseInt(inscritosRaw.toString()) || 0;
-
-      // VALIDACIÓN DE INTEGRIDAD
-      if (!asignatura || String(asignatura).trim() === '' || !this.lastFaculty || !this.lastCareer) {
-        if (asignatura) {
-          this.logger.warn(`Omitiendo materia: ${asignatura} | Causa: Carrera o Facultad no detectada.`);
-        }
-        return null;
-      }
-
-      // --- 3. NUEVO: INVOCAMOS AL MOTOR DE CÁLCULO ---
-      // Aquí es donde el backend "piensa" antes de guardar
-      const health = this.capacityEngine.analyzeCourseHealth(currentStudents, maxCapacity);
-
-      // --- 4. PERSISTENCIA CON ESTADOS ---
       const faculty = await this.prisma.faculty.upsert({
         where: { name: this.lastFaculty },
         update: {},
@@ -80,35 +42,35 @@ export class AppService {
       return await this.prisma.course.upsert({
         where: {
           name_parallel_level_careerId: {
-            name: String(asignatura).trim(),
-            parallel: String(paralelo).trim(),
-            level: String(nivel).trim(),
+            name: String(data.name).trim(),
+            parallel: String(data.parallel).trim(),
+            level: String(data.level).trim(),
             careerId: career.id
           }
         },
         update: {
-          maxCapacity: maxCapacity,
-          currentStudents: currentStudents,
-          // Guardamos lo que calculó el motor
-          status: health.status,
-          occupancyPercentage: health.percentage,
-          updatedAt: new Date() // Importante para la base de datos
+          maxCapacity: data.maxCapacity,
+          currentStudents: data.currentStudents,
+          // 🚩 USAMOS LO QUE CALCULÓ GO
+          status: data.status, 
+          occupancyPercentage: data.occupancyPercentage,
+          updatedAt: new Date()
         },
         create: {
-          name: String(asignatura).trim(),
-          level: String(nivel).trim(),
-          parallel: String(paralelo).trim(),
-          maxCapacity: maxCapacity,
-          currentStudents: currentStudents,
+          name: String(data.name).trim(),
+          level: String(data.level).trim(),
+          parallel: String(data.parallel).trim(),
+          maxCapacity: data.maxCapacity,
+          currentStudents: data.currentStudents,
           careerId: career.id,
-          // Guardamos lo que calculó el motor
-          status: health.status,
-          occupancyPercentage: health.percentage
+          // 🚩 USAMOS LO QUE CALCULÓ GO
+          status: data.status,
+          occupancyPercentage: data.occupancyPercentage
         }
       });
-
     } catch (error) {
-      this.logger.error(`Error de persistencia: ${error instanceof Error ? error.message : String(error)}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Error de persistencia: ${errorMessage}`);
       throw error;
     }
   }

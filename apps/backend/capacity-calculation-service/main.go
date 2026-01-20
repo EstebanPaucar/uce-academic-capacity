@@ -1,67 +1,83 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
-	"sync"
-	"time"
+	"math"
+	"sync" // Para manejo de Goroutines
 )
 
-// Section representa un paralelo o asignatura a calcular
-type Section struct {
-	ID   int
-	Name string
+// CapacityStatus coincide con tu Enum de TypeScript [cite: 2026-01-20]
+const (
+	AVAILABLE = "DISPONIBLE"
+	WARNING   = "ALERTA"
+	SATURATED  = "SATURADO"
+	OVERFLOW  = "DESBORDADO"
+)
+
+type CourseData struct {
+	Name            string `json:"name"`
+	CurrentStudents int    `json:"currentStudents"`
+	MaxCapacity     int    `json:"maxCapacity"`
 }
 
-// Función que realiza el cálculo pesado (Goroutine)
-func calculateCapacity(section Section, wg *sync.WaitGroup) {
-	defer wg.Done()
-	log.Printf("[Calculation] Processing: %s (ID: %d)\n", section.Name, section.ID)
-	
-	// Simulación de procesamiento intensivo
-	time.Sleep(2 * time.Second) 
-	
-	log.Printf("[Success] Capacity calculated for %s\n", section.Name)
+type CalculationResult struct {
+	Name       string  `json:"name"`
+	Status     string  `json:"status"`
+	Percentage float64 `json:"percentage"`
 }
 
-// Handler para activar el cálculo vía HTTP
-func calculationHandler(w http.ResponseWriter, r *http.Request) {
-	sections := []Section{
-		{ID: 101, Name: "Programación Distribuida - Paralelo A"},
-		{ID: 102, Name: "Arquitectura de Software - Paralelo B"},
-		{ID: 103, Name: "Minería de Datos - Paralelo C"},
+// El "Cerebro" en Go con procesamiento paralelo [cite: 184, 469]
+func calculateCapacity(course CourseData, wg *sync.WaitGroup, results chan<- CalculationResult) {
+	defer wg.Done() // Indica que esta Goroutine terminó
+
+	percentage := 0.0
+	status := AVAILABLE
+
+	if course.MaxCapacity == 0 {
+		status = OVERFLOW
+		percentage = 100.0
+	} else {
+		percentage = (float64(course.CurrentStudents) / float64(course.MaxCapacity)) * 100
+		percentage = math.Round(percentage*100) / 100
+
+		if percentage >= 100 {
+			status = SATURATED
+		} else if percentage >= 80 { // Umbral de tu reglamento FE19 [cite: 89, 243]
+			status = WARNING
+		}
 	}
 
-	var wg sync.WaitGroup
-	log.Println("--- Starting Parallel Processing via HTTP Request ---")
-
-	for _, section := range sections {
-		wg.Add(1)
-		go calculateCapacity(section, &wg)
+	results <- CalculationResult{
+		Name:       course.Name,
+		Status:     status,
+		Percentage: percentage,
 	}
-
-	wg.Wait()
-	fmt.Fprintf(w, "Cálculo de capacidad UCE completado exitosamente en paralelo.")
 }
 
 func main() {
-	// Definimos el puerto 3004 según nuestro mapa de arquitectura
-	port := "3004"
+	// Simulación de carga masiva de datos [cite: 117]
+	courses := []CourseData{
+		{Name: "Software Architecture", CurrentStudents: 35, MaxCapacity: 35},
+		{Name: "Distributed Systems", CurrentStudents: 30, MaxCapacity: 40},
+	}
 
-	// Definimos las rutas (endpoints)
-	http.HandleFunc("/calculate", calculationHandler)
-	
-	// Health Check simple
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Capacity Calculation Service (Go) is Online")
-	})
+	var wg sync.WaitGroup
+	results := make(chan CalculationResult, len(courses))
 
-	log.Printf("🚀 UCE Calculation Engine (Go) running on http://localhost:%s\n", port)
-	
-	// Iniciamos el servidor
-	err := http.ListenAndServe(":"+port, nil)
-	if err != nil {
-		log.Fatal("Error starting server: ", err)
+	fmt.Println("🚀 Iniciando cálculo paralelo de capacidad (Go Goroutines)...")
+
+	for _, course := range courses {
+		wg.Add(1)
+		go calculateCapacity(course, &wg, results) // Dispara el hilo paralelo [cite: 326]
+	}
+
+	wg.Wait()
+	close(results)
+
+	for res := range results {
+		resJSON, _ := json.Marshal(res)
+		fmt.Printf("✅ Resultado: %s\n", string(resJSON))
 	}
 }

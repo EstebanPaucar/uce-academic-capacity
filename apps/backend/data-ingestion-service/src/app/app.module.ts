@@ -5,30 +5,33 @@ import { AppService } from './app.service';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './jwt.strategy';
 
-
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     ClientsModule.register([
+      // 1. CABLE HACIA AUDITORÍA (MongoDB)
       {
-        //name: 'INGESTION_SERVICE',
         name: 'AUDIT_SERVICE',
         transport: Transport.RMQ,
         options: {
-          // 1. Priorizamos variables de entorno para AWS Academy [cite: 2026-01-06]
           urls: [process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672'],
-          // 2. Sincronizamos el nombre de la cola con el Consumidor [cite: 2026-01-18]
-
-          //queue: 'academic_data_queue',
           queue: 'audit_queue',
-          queueOptions: {
-            durable: true, // Persistencia de mensajes ante reinicios [cite: 2026-01-06]
-          },
+          queueOptions: { durable: true },
+        },
+      },
+      // 2. CABLE HACIA MOTOR DE CÁLCULO (Go / PostgreSQL) [cite: 184, 196]
+      {
+        name: 'CALCULATION_SERVICE',
+        transport: Transport.RMQ,
+        options: {
+          urls: [process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672'],
+          queue: 'academic_data_queue', // Esta es la que escuchará el servicio en Go
+          queueOptions: { durable: true },
         },
       },
     ]),
   ],
   controllers: [AppController],
-  providers: [AppService,JwtStrategy],
+  providers: [AppService, JwtStrategy],
 })
 export class AppModule {}

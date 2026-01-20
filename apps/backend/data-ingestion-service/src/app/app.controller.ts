@@ -10,63 +10,54 @@ export class AppController {
   private readonly logger = new Logger(AppController.name);
 
   constructor(
-    // 🚩 CAMBIO: El nombre de la variable debe ser 'client' para que 'this.client' funcione
-    @Inject('AUDIT_SERVICE') private readonly client: ClientProxy, 
+    @Inject('AUDIT_SERVICE') private readonly auditClient: ClientProxy,
+    @Inject('CALCULATION_SERVICE') private readonly calcClient: ClientProxy, // Nuevo cable
     private readonly appService: AppService
   ) {}
 
-  // 🚩 1. RUTA PARA REGISTROS MANUALES (JSON)
   @Post('upload')
   async handleManualUpload(@Body() body: { records: any[] }) {
     if (!body.records || body.records.length === 0) {
-      throw new BadRequestException('No hay registros para procesar.');
+      throw new BadRequestException('No hay registros.');
     }
 
-    this.logger.log(`Recibidos ${body.records.length} registros manuales.`);
-
     body.records.forEach((row: any) => {
-      // Ahora 'this.client' sí existe
-      this.client.emit('course_created', row);
+      // 🚩 Enviamos al motor de cálculo en Go [cite: 266]
+      this.calcClient.emit('course_created', row);
     });
 
-    return { status: 'success', message: 'Simulación de carga enviada' };
+    return { status: 'success', message: 'Carga manual enviada al motor de cálculo' };
   }
 
-  // 🚩 2. RUTA PARA ARCHIVOS REALES (EXCEL) PROTEGIDA
   @Post('upload-excel')
   @UseGuards(AuthGuard('jwt')) 
   @UseInterceptors(FileInterceptor('file'))
   async uploadFile(@UploadedFile() file: Express.Multer.File, @Req() req: any) {
-    if (!file) {
-      throw new BadRequestException('No se ha subido ningún archivo.');
-    }
+    if (!file) throw new BadRequestException('Archivo no encontrado.');
 
     const records = this.appService.parseExcel(file.buffer);
 
+    // 🚩 DISTRIBUCIÓN DE DATOS:
     records.forEach((row: any) => {
-      // Envía datos al Motor de Cálculo (Go)
-      this.client.emit('course_created', row);
+      // 1. Al Motor de Cálculo (Go) para procesamiento paralelo 
+      this.calcClient.emit('course_created', row);
     });
 
-    // Envía log al Audit Service (MongoDB)
-    this.client.emit('log_created', {
+    // 2. Al Audit Service (MongoDB) para trazabilidad [cite: 297]
+    this.auditClient.emit('log_created', {
       userId: req.user.userId,
       username: req.user.username,
       action: 'EXCEL_UPLOAD',
       service: 'data-ingestion-service',
-      metadata: { 
-        filename: file.originalname, 
-        totalRecords: records.length 
-      }
+      metadata: { filename: file.originalname, totalRecords: records.length }
     });
 
-    this.logger.log(`--- ETL: Distributed ${records.length} courses and sent Audit Log ---`);
+    this.logger.log(`--- Pipeline: Sent ${records.length} courses to Go and Log to Mongo ---`);
 
     return { 
       status: 'success', 
-      totalProcessed: records.length,
-      message: 'Archivo procesado y auditoría registrada',
-      filename: file.originalname, 
+      message: 'Datos distribuidos correctamente en la arquitectura',
+      filename: file.originalname 
     };
   }
 }
