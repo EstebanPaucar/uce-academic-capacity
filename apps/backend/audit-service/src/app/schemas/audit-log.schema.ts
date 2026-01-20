@@ -1,22 +1,22 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-@Schema({ timestamps: true }) // Crea automáticamente 'createdAt' y 'updatedAt'
+@Schema({ timestamps: true })
 export class AuditLog extends Document {
   @Prop({ required: true })
-  userId: string;
+  userId!: string; // El '!' elimina el error de inicialización
 
   @Prop({ required: true })
-  username: string;
+  username!: string;
 
   @Prop({ required: true })
-  action: string; // Ejemplo: 'USER_LOGIN', 'EXCEL_UPLOAD'
+  action!: string;
 
   @Prop({ required: true })
-  service: string; // De qué microservicio viene el log
+  service!: string;
 
-  @Prop({ type: Object }) // Estructura flexible para detalles extra
-  metadata: Record<string, any>;
+  @Prop({ type: Object })
+  metadata!: Record<string, any>;
 }
 
 export const AuditLogSchema = SchemaFactory.createForClass(AuditLog);
