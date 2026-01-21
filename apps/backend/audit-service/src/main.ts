@@ -5,6 +5,7 @@ import { AppModule } from './app/app.module';
 
 async function bootstrap() {
   // 1. Crear la instancia base de la aplicación (HTTP)
+  
   const app = await NestFactory.create(AppModule);
   
   const globalPrefix = 'api';
@@ -28,7 +29,7 @@ async function bootstrap() {
   await app.startAllMicroservices();
 
   const port = process.env.PORT || 3003;
-  
+  app.enableCors();
   // 4. INICIAR EL SERVIDOR HTTP
   await app.listen(port);
 

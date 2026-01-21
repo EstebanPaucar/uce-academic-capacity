@@ -16,8 +16,10 @@ model User {
   email        String @unique
   passwordHash String @map("password_hash")
   roleId       Int    @map("role_id")
-  facultyId    Int?   @map("faculty_id")
   role         Role   @relation(fields: [roleId], references: [id])
+
+  facultyId    Int?     @map("faculty_id")
+  faculty      Faculty? @relation(fields: [facultyId], references: [id])
 
   @@map("users")
 }
@@ -25,8 +27,8 @@ model User {
 // Modelo de Rol
 model Role {
   id          Int    @id @default(autoincrement())
-  name        String
-  permissions Json
+  name        String @unique
+  permissions Json?
   users       User[]
 
   @@map("roles")
@@ -37,6 +39,7 @@ model Faculty {
   id      Int      @id @default(autoincrement())
   name    String   @unique
   careers Career[]
+  users   User[]
 
   @@map("faculties")
 }
