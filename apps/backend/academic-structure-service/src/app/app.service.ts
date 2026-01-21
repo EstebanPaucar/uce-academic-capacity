@@ -12,6 +12,20 @@ export class AppService {
     });
   }
 
+  // 🚩 NUEVO MÉTODO: Obtener datos crudos para recálculo
+  async getAllCoursesForRecalculation() {
+    return this.prisma.course.findMany({
+      // Incluimos las relaciones para poder enviar "Facultad" y "Carrera" a Go
+      include: {
+        career: {
+          include: {
+            faculty: true
+          }
+        }
+      }
+    });
+  }
+
   private getEcuadorTime(): Date {
     const now = new Date();
     return new Date(now.getTime() - (5 * 60 * 60 * 1000));
@@ -64,7 +78,7 @@ export class AppService {
       });
 
     } catch (error) {
-      // 🚩 CORRECCIÓN AQUÍ: Casteamos 'error' a 'any' para leer el mensaje
+      // 🚩 CORRECCIÓN: Casteamos 'error' a 'any' para leer el mensaje
       const msg = (error as any).message || String(error);
       this.logger.error(`❌ Error persistiendo ${data.name}: ${msg}`);
       // No lanzamos el error (throw) para que el proceso continúe con la siguiente materia
@@ -82,7 +96,7 @@ export class AppService {
         create: { name },
       });
     } catch (e) {
-      // 🚩 CORRECCIÓN AQUÍ: Casteamos 'e' a 'any' para leer .code
+      // 🚩 CORRECCIÓN: Casteamos 'e' a 'any'
       if ((e as any).code === 'P2002') {
         return await this.prisma.faculty.findUniqueOrThrow({ where: { name } });
       }
@@ -98,7 +112,7 @@ export class AppService {
         create: { name, facultyId },
       });
     } catch (e) {
-      // 🚩 CORRECCIÓN AQUÍ: Casteamos 'e' a 'any' para leer .code
+      // 🚩 CORRECCIÓN: Casteamos 'e' a 'any'
       if ((e as any).code === 'P2002') {
         return await this.prisma.career.findUniqueOrThrow({ 
           where: { name_facultyId: { name, facultyId } } 
