@@ -76,6 +76,8 @@ model Course {
   careerId        Int      // Se mantiene la relación por Int
   career          Career   @relation(fields: [careerId], references: [id])
 
+  requests            Request[]
+
   @@unique([name, parallel, level, careerId])
 }
 
@@ -104,5 +106,33 @@ model Notification {
   isRead      Boolean  @default(false)
 
   @@map("notifications")
+}
+
+model Request {
+  id            Int      @id @default(autoincrement())
+  
+  // Relaciones
+  courseId      Int      @map("course_id")
+  course        Course   @relation(fields: [courseId], references: [id])
+  
+  directorId    Int      @map("director_id") // ID del usuario que solicita
+  
+  // Datos del cambio
+  currentCapacity Int    @map("current_capacity")
+  requestedCapacity Int  @map("requested_capacity")
+  
+  // Justificación (Requisito RF-12 del informe)
+  justificationType String @map("justification_type") // 'CIERRE', 'PROFESIONALIZANTE', 'UNICO'
+  details       String?  // Explicación adicional
+  
+  // Estado del Flujo (PENDING, APPROVED, REJECTED)
+  status        String   @default("PENDING")
+  
+  resolutionCode String? @map("resolution_code") // Código de acta si se aprueba
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("requests")
 }
 
