@@ -10,14 +10,12 @@ import (
 	"github.com/streadway/amqp"
 )
 
-// --- VARIABLES GLOBALES ---
 var (
-	CurrentAlertThreshold = 80.0      
+	CurrentAlertThreshold = 80.0 
 	mu                    sync.RWMutex 
 )
 
-// --- ESTRUCTURAS ---
-
+// --- ESTRUCTURAS (Igual que antes) ---
 type IncomingNestJSEvent struct {
 	Pattern string         `json:"pattern"`
 	Data    IncomingCourse `json:"data"`
@@ -53,7 +51,6 @@ type OutputNestJSMessage struct {
 }
 
 func main() {
-	// --- CONEXIÓN ---
 	rmqURL := os.Getenv("RABBITMQ_URL")
 	if rmqURL == "" {
 		rmqURL = "amqp://guest:guest@localhost:5672/"
@@ -69,8 +66,13 @@ func main() {
 
 	// --- COLAS ---
 	qInput, _ := ch.QueueDeclare("academic_data_queue", true, false, false, false, nil)
+	// Cola original (Base de datos)
 	qOutput, _ := ch.QueueDeclare("calculation_results_queue", true, false, false, false, nil)
+	// Cola de Reglas
 	qRules, _ := ch.QueueDeclare("rules_updates_queue", true, false, false, false, nil)
+	
+	// 🚩 NUEVA COLA: Notificaciones (Exclusiva para Notification Service)
+	qNotif, _ := ch.QueueDeclare("notification_queue", true, false, false, false, nil)
 
 	// --- CONSUMIDORES ---
 	msgsData, err := ch.Consume(qInput.Name, "", true, false, false, false, nil)
@@ -96,7 +98,7 @@ func main() {
 		}
 	}()
 
-	// --- HILO 2: DATOS (LÓGICA CORREGIDA) ---
+	// --- HILO 2: DATOS ---
 	go func() {
 		for d := range msgsData {
 			go func(msg amqp.Delivery) {
@@ -107,37 +109,33 @@ func main() {
 				}
 
 				course := event.Data
-
 				mu.RLock()
 				umbralAlerta := CurrentAlertThreshold
 				mu.RUnlock()
 
-				// --- 🚩 LÓGICA DEL MOTOR (MODIFICADA) ---
+				// LÓGICA DE CÁLCULO
 				percentage := 0.0
-				status := "DISPONIBLE" // Valor inicial
+				status := "DISPONIBLE"
 
 				if course.MaxCapacity > 0 {
 					percentage = (float64(course.CurrentStudents) / float64(course.MaxCapacity)) * 100
 					percentage = math.Round(percentage*100) / 100
 
-					// 1. Estado Principal (Prioridad % Ocupación)
+					// 1. Estado Principal
 					if percentage >= 100 {
 						status = "SATURADO"
 					} else if percentage >= umbralAlerta { 
 						status = "ALERTA"
 					}
-					// Nota: Si es < Umbral, se queda como "DISPONIBLE"
 
-					// 2. Estado Secundario (Normativa) - CONCATENAMOS
-					if course.CurrentStudents < 35 {
+					// 2. Estado Normativo (Si > 35)
+					if course.CurrentStudents > 35 {
 						status += " | ALERTA_NORMATIVA"
 					}
-
 				} else {
 					status = "DESBORDADO"
 					percentage = 100.0
 				}
-				// ----------------------------------------
 
 				result := CalculatedResult{
 					IncomingCourse:      course,
@@ -148,10 +146,18 @@ func main() {
 				nestMessage := OutputNestJSMessage{Pattern: "course_created", Data: result}
 				body, _ := json.Marshal(nestMessage)
 
+				// 🚩 DOBLE PUBLICACIÓN 🚩
+				
+				// 1. Enviar a Academic Structure (BD) - COMO SIEMPRE
 				ch.Publish("", qOutput.Name, false, false, amqp.Publishing{
-					ContentType: "application/json",
-					Body:        body,
+					ContentType: "application/json", Body: body,
 				})
+
+				// 2. Enviar a Notification Service (NUEVO)
+				ch.Publish("", qNotif.Name, false, false, amqp.Publishing{
+					ContentType: "application/json", Body: body,
+				})
+
 			}(d)
 		}
 	}()
