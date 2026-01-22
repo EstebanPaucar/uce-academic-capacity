@@ -5,25 +5,40 @@ import (
 	"log"
 	"math"
 	"os"
+	"sync" 
 
 	"github.com/streadway/amqp"
 )
 
-// 1. ESTRUCTURA DE ENTRADA (El "Sobre" que envía Ingestion Service)
+// --- VARIABLES GLOBALES ---
+var (
+	CurrentAlertThreshold = 80.0      
+	mu                    sync.RWMutex 
+)
+
+// --- ESTRUCTURAS ---
+
 type IncomingNestJSEvent struct {
 	Pattern string         `json:"pattern"`
-	Data    IncomingCourse `json:"data"` // Aquí adentro está la materia real
+	Data    IncomingCourse `json:"data"`
 }
 
-// Estructura de la materia (La "Carta")
 type IncomingCourse struct {
-    Name            string `json:"name"`            // Coincide con cleanData.name
-    Parallel        string `json:"parallel"`        // Coincide con cleanData.parallel
-    Level           string `json:"level"`           // Coincide con cleanData.level
-    CurrentStudents int    `json:"currentStudents"` // Coincide con cleanData.currentStudents
-    MaxCapacity     int    `json:"maxCapacity"`     // Coincide con cleanData.maxCapacity
-    Faculty         string `json:"Facultad"`        // Coincide con cleanData.Facultad
-    Career          string `json:"Carrera"`         // Coincide con cleanData.Carrera
+	Name            string `json:"name"`
+	Parallel        string `json:"parallel"`
+	Level           string `json:"level"`
+	CurrentStudents int    `json:"currentStudents"`
+	MaxCapacity     int    `json:"maxCapacity"`
+	Faculty         string `json:"Facultad"`
+	Career          string `json:"Carrera"`
+}
+
+type IncomingRuleEvent struct {
+	Pattern string `json:"pattern"`
+	Data    struct {
+		Key   string  `json:"key"`
+		Value float64 `json:"value"`
+	} `json:"data"`
 }
 
 type CalculatedResult struct {
@@ -32,13 +47,13 @@ type CalculatedResult struct {
 	OccupancyPercentage float64 `json:"occupancyPercentage"`
 }
 
-// Estructura de SALIDA (El "Sobre" para el siguiente servicio)
 type OutputNestJSMessage struct {
 	Pattern string           `json:"pattern"`
 	Data    CalculatedResult `json:"data"`
 }
 
 func main() {
+	// --- CONEXIÓN ---
 	rmqURL := os.Getenv("RABBITMQ_URL")
 	if rmqURL == "" {
 		rmqURL = "amqp://guest:guest@localhost:5672/"
@@ -52,50 +67,77 @@ func main() {
 	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
 
+	// --- COLAS ---
 	qInput, _ := ch.QueueDeclare("academic_data_queue", true, false, false, false, nil)
 	qOutput, _ := ch.QueueDeclare("calculation_results_queue", true, false, false, false, nil)
+	qRules, _ := ch.QueueDeclare("rules_updates_queue", true, false, false, false, nil)
 
-	msgs, err := ch.Consume(qInput.Name, "", true, false, false, false, nil)
-	failOnError(err, "Failed to register a consumer")
+	// --- CONSUMIDORES ---
+	msgsData, err := ch.Consume(qInput.Name, "", true, false, false, false, nil)
+	failOnError(err, "Failed Data Consumer")
+
+	msgsRules, err := ch.Consume(qRules.Name, "", true, false, false, false, nil)
+	failOnError(err, "Failed Rules Consumer")
 
 	forever := make(chan bool)
 
+	// --- HILO 1: REGLAS ---
 	go func() {
-		for d := range msgs {
+		for d := range msgsRules {
+			var ruleEvent IncomingRuleEvent
+			if err := json.Unmarshal(d.Body, &ruleEvent); err == nil && ruleEvent.Pattern == "rule_updated" {
+				mu.Lock() 
+				if ruleEvent.Data.Key == "UMBRAL_ALERTA" {
+					CurrentAlertThreshold = ruleEvent.Data.Value
+					log.Printf("🔧 CONFIG ACTUALIZADA: Nuevo Umbral = %.2f%%", CurrentAlertThreshold)
+				}
+				mu.Unlock()
+			}
+		}
+	}()
+
+	// --- HILO 2: DATOS (LÓGICA CORREGIDA) ---
+	go func() {
+		for d := range msgsData {
 			go func(msg amqp.Delivery) {
-				// 🚩 PASO 1: ABRIR EL SOBRE DE ENTRADA
 				var event IncomingNestJSEvent
-				err := json.Unmarshal(msg.Body, &event)
-				if err != nil {
-					log.Printf("❌ Error al leer JSON de entrada: %s", err)
+				if err := json.Unmarshal(msg.Body, &event); err != nil {
+					log.Printf("❌ Error JSON: %s", err)
 					return
 				}
 
-				// Extraemos la materia real
-				course := event.Data 
+				course := event.Data
 
-				// Lógica del Motor (Inscritos / Cupo)
+				mu.RLock()
+				umbralAlerta := CurrentAlertThreshold
+				mu.RUnlock()
+
+				// --- 🚩 LÓGICA DEL MOTOR (MODIFICADA) ---
 				percentage := 0.0
-				status := "DISPONIBLE"
+				status := "DISPONIBLE" // Valor inicial
 
 				if course.MaxCapacity > 0 {
 					percentage = (float64(course.CurrentStudents) / float64(course.MaxCapacity)) * 100
 					percentage = math.Round(percentage*100) / 100
 
+					// 1. Estado Principal (Prioridad % Ocupación)
 					if percentage >= 100 {
 						status = "SATURADO"
-					} else if percentage >= 80 { 
+					} else if percentage >= umbralAlerta { 
 						status = "ALERTA"
 					}
-					
+					// Nota: Si es < Umbral, se queda como "DISPONIBLE"
+
+					// 2. Estado Secundario (Normativa) - CONCATENAMOS
 					if course.CurrentStudents < 35 {
-						status = "ALERTA_NORMATIVA" 
+						status += " | ALERTA_NORMATIVA"
 					}
+
 				} else {
-					// Solo es desbordado si realmente vino con 0 de capacidad
-					status = "DESBORDADO" 
+					status = "DESBORDADO"
 					percentage = 100.0
 				}
+				// ----------------------------------------
 
 				result := CalculatedResult{
 					IncomingCourse:      course,
@@ -103,26 +145,18 @@ func main() {
 					OccupancyPercentage: percentage,
 				}
 
-				// 🚩 PASO 2: METER EN SOBRE DE SALIDA
-				nestMessage := OutputNestJSMessage{
-					Pattern: "course_created", 
-					Data:    result,
-				}
-
+				nestMessage := OutputNestJSMessage{Pattern: "course_created", Data: result}
 				body, _ := json.Marshal(nestMessage)
-				
+
 				ch.Publish("", qOutput.Name, false, false, amqp.Publishing{
 					ContentType: "application/json",
 					Body:        body,
 				})
-
-				// Log corregido para ver el nombre real
-				log.Printf("✅ Calculado: %s (%v%%) -> %s", course.Name, percentage, status)
 			}(d)
 		}
 	}()
 
-	log.Printf("--- 🐹 Go Calculation Service Ready ---")
+	log.Printf("--- 🐹 Go Calculation Service Ready (Umbral: %.0f%%) ---", CurrentAlertThreshold)
 	<-forever
 }
 
