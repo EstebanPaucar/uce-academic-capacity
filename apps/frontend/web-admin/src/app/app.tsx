@@ -6,6 +6,7 @@ const INGESTION_URL = 'http://localhost:3000/api';  // data-ingestion-service
 const STRUCTURE_URL = 'http://localhost:3001/api';  // academic-structure-service
 const AUTH_URL      = 'http://localhost:3002/api';  // auth-service
 const RULES_URL     = 'http://localhost:3005/api';  // rules-configuration-service
+const NOTIFICATION_URL = 'http://localhost:3007/api'; // 🔔 notification-service
 
 // --- ESTILOS (Paleta UCE) ---
 const colors = {
@@ -34,7 +35,7 @@ const styles = {
   // Menu Item
   menuItem: (active: boolean, disabled: boolean) => ({
     padding: '12px 15px', margin: '5px 0', borderRadius: '6px', cursor: disabled ? 'not-allowed' : 'pointer',
-    backgroundColor: active ? 'rgba(255,255,255,0.2)' : 'transparent', // Más visible si está activo
+    backgroundColor: active ? 'rgba(255,255,255,0.2)' : 'transparent', 
     color: disabled ? 'rgba(255,255,255,0.4)' : colors.white,
     display: 'flex', alignItems: 'center', gap: '10px',
     borderLeft: active ? `4px solid ${colors.secondary}` : '4px solid transparent',
@@ -61,14 +62,16 @@ interface User {
 export function App() {
   // --- ESTADOS GLOBALES ---
   const [view, setView] = useState<'LOGIN' | 'REGISTER' | 'DASHBOARD'>('LOGIN');
-  // Nuevo Estado: Navegación interna del Dashboard
-  const [dashboardView, setDashboardView] = useState<'MAIN' | 'INGESTION' | 'RULES'>('MAIN');
+  // Navegación interna: Agregamos 'NOTIFICATIONS'
+  const [dashboardView, setDashboardView] = useState<'MAIN' | 'INGESTION' | 'RULES' | 'NOTIFICATIONS'>('MAIN');
   
   const [user, setUser] = useState<User | null>(null);
   
   // Datos
   const [academicData, setAcademicData] = useState<any[]>([]);
   const [facultiesList, setFacultiesList] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]); // 🔔 Nuevo Estado
+
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -84,12 +87,34 @@ export function App() {
     fetchFaculties();
   }, []);
 
+  // Cargar notificaciones cuando se cambia a esa vista
+  useEffect(() => {
+    if (dashboardView === 'NOTIFICATIONS') {
+      loadNotifications();
+    }
+  }, [dashboardView]);
+
   const fetchFaculties = async () => {
     try {
       const res = await axios.get(`${STRUCTURE_URL}/structure`);
       setFacultiesList(res.data);
     } catch (error) {
       console.error("⚠️ Error cargando facultades", error);
+    }
+  };
+
+  const loadNotifications = async () => {
+    if (!user) return;
+    try {
+      const res = await axios.get(`${NOTIFICATION_URL}/notifications`, {
+        params: {
+          role: user.role,
+          facultyId: user.facultyId
+        }
+      });
+      setNotifications(res.data);
+    } catch (error) {
+      console.error("Error cargando notificaciones", error);
     }
   };
 
@@ -111,7 +136,7 @@ export function App() {
       setUser(currentUser);
       localStorage.setItem('token', access_token);
       setView('DASHBOARD');
-      setDashboardView('MAIN'); // Resetear a la vista principal al entrar
+      setDashboardView('MAIN'); 
       loadDashboardData();
     } catch (error) {
       alert('Error de Login. Verifica credenciales.');
@@ -167,7 +192,6 @@ export function App() {
         headers: { Authorization: `Bearer ${user?.token}` }
       });
       alert('✅ Archivo enviado al pipeline de procesamiento (RabbitMQ -> Go Engine).');
-      // Después de subir, volvemos al dashboard principal para ver resultados
       setTimeout(() => {
         loadDashboardData();
         setDashboardView('MAIN');
@@ -233,7 +257,7 @@ export function App() {
     );
   }, [academicData, searchTerm, user]);
 
-  // --- VISTAS LOGIN/REGISTER (Sin cambios mayores) ---
+  // --- VISTAS LOGIN/REGISTER ---
   if (view === 'LOGIN') {
     return (
       <div style={{ ...styles.container, justifyContent: 'center', alignItems: 'center', flexDirection: 'column' }}>
@@ -287,7 +311,6 @@ export function App() {
               <small style={{ color: colors.secondary }}>BIENVENIDO</small><br/>
               <strong style={{ fontSize: '0.9em' }}>{user?.username}</strong>
             </div>
-            {/* BOTÓN CERRAR SESIÓN (ARRIBA) */}
             <button 
               onClick={logout}
               style={{ backgroundColor: 'rgba(0,0,0,0.3)', border: 'none', color: 'white', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8em' }}
@@ -297,7 +320,7 @@ export function App() {
           </div>
         </div>
 
-        {/* MENÚ DE NAVEGACIÓN */}
+        {/* MENÚ */}
         <div 
           style={styles.menuItem(dashboardView === 'MAIN', false)} 
           onClick={() => setDashboardView('MAIN')}
@@ -305,7 +328,6 @@ export function App() {
           📊 Dashboard Principal
         </div>
         
-        {/* Solo Admin ve Ingesta y Parametrización */}
         <div 
           style={styles.menuItem(dashboardView === 'INGESTION', user?.role !== 'ADMIN')} 
           onClick={() => user?.role === 'ADMIN' && setDashboardView('INGESTION')}
@@ -320,13 +342,19 @@ export function App() {
           ⚙️ Parametrización
         </div>
 
-        <div style={styles.menuItem(false, true)}>🔔 Notificaciones</div>
+        {/* 🔔 MENU NOTIFICACIONES NUEVO */}
+        <div 
+          style={styles.menuItem(dashboardView === 'NOTIFICATIONS', false)}
+          onClick={() => setDashboardView('NOTIFICATIONS')}
+        >
+          🔔 Notificaciones
+        </div>
       </div>
 
-      {/* ÁREA PRINCIPAL (CAMBIA SEGÚN LA VISTA) */}
+      {/* ÁREA PRINCIPAL */}
       <div style={styles.main}>
         
-        {/* --- VISTA 1: DASHBOARD PRINCIPAL (TABLA) --- */}
+        {/* --- VISTA 1: DASHBOARD --- */}
         {dashboardView === 'MAIN' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -340,12 +368,9 @@ export function App() {
 
             <div style={styles.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 15 }}>
-                <input placeholder="🔍 Buscar asignatura, carrera..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ ...styles.input, width: '300px', marginBottom: 0 }} />
-                <div style={{ alignSelf: 'center' }}>
-                  <strong>Total Asignaturas: </strong> {tableData.length}
-                </div>
+                <input placeholder="🔍 Buscar asignatura..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ ...styles.input, width: '300px', marginBottom: 0 }} />
+                <div style={{ alignSelf: 'center' }}><strong>Total: </strong> {tableData.length}</div>
               </div>
-              
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                   <thead>
@@ -354,27 +379,25 @@ export function App() {
                       <th style={{ padding: 12 }}>Carrera</th>
                       <th style={{ padding: 12 }}>Asignatura</th>
                       <th style={{ padding: 12 }}>Nivel</th>
-                      <th style={{ padding: 12, textAlign: 'center' }}>Cupo</th>
-                      <th style={{ padding: 12, textAlign: 'center' }}>Inscritos</th>
-                      <th style={{ padding: 12, textAlign: 'center' }}>Ocupación</th>
-                      <th style={{ padding: 12, textAlign: 'center' }}>Estado</th>
+                      <th style={{ padding: 12 }}>Cupo</th>
+                      <th style={{ padding: 12 }}>Inscritos</th>
+                      <th style={{ padding: 12 }}>Ocupación</th>
+                      <th style={{ padding: 12 }}>Estado</th>
                     </tr>
                   </thead>
                   <tbody>
                     {tableData.length > 0 ? tableData.map((row, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid #eee', backgroundColor: i % 2 === 0 ? 'white' : '#f9f9f9' }}>
-                        <td style={{ padding: 12, color: '#666' }}>{row.faculty}</td>
+                      <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+                        <td style={{ padding: 12 }}>{row.faculty}</td>
                         <td style={{ padding: 12 }}>{row.career}</td>
-                        <td style={{ padding: 12, fontWeight: 'bold', color: colors.primary }}>{row.name}</td>
+                        <td style={{ padding: 12, fontWeight: 'bold' }}>{row.name}</td>
                         <td style={{ padding: 12 }}>{row.level}</td>
-                        <td style={{ padding: 12, textAlign: 'center' }}>{row.capacity}</td>
-                        <td style={{ padding: 12, textAlign: 'center' }}>{row.enrolled}</td>
-                        <td style={{ padding: 12, textAlign: 'center' }}>{row.occupancy}%</td>
-                        <td style={{ padding: 12, textAlign: 'center' }}><span style={styles.statusBadge(row.status)}>{row.status}</span></td>
+                        <td style={{ padding: 12 }}>{row.capacity}</td>
+                        <td style={{ padding: 12 }}>{row.enrolled}</td>
+                        <td style={{ padding: 12 }}>{row.occupancy}%</td>
+                        <td style={{ padding: 12 }}><span style={styles.statusBadge(row.status)}>{row.status}</span></td>
                       </tr>
-                    )) : (
-                      <tr><td colSpan={8} style={{ padding: 30, textAlign: 'center', color: '#999' }}>No hay datos.</td></tr>
-                    )}
+                    )) : <tr><td colSpan={8} style={{ padding: 30, textAlign: 'center' }}>No hay datos.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -382,77 +405,91 @@ export function App() {
           </>
         )}
 
-        {/* --- VISTA 2: INGESTA DE DATOS (CON EXPLICACIÓN) --- */}
+        {/* --- VISTA 2: INGESTA --- */}
         {dashboardView === 'INGESTION' && (
           <div style={{ maxWidth: '800px', margin: 'auto' }}>
-            <h1 style={{ color: colors.primary, borderBottom: `2px solid ${colors.secondary}`, paddingBottom: 10 }}>📂 Ingesta y Procesamiento de Datos</h1>
-            
+            <h1 style={{ color: colors.primary, borderBottom: `2px solid ${colors.secondary}`, paddingBottom: 10 }}>📂 Ingesta y Procesamiento</h1>
             <div style={styles.infoBox}>
-              <h3 style={{ marginTop: 0 }}>¿Cómo funciona este módulo?</h3>
-              <p>Esta herramienta permite cargar la planificación académica completa de la universidad. El proceso es el siguiente:</p>
-              <ol>
-                <li>Usted sube un archivo <strong>Excel (.xlsx)</strong> con la matriz de asignaturas.</li>
-                <li>El sistema valida el formato y envía los datos a una cola de mensajería (<strong>RabbitMQ</strong>).</li>
-                <li>Un motor de cálculo de alto rendimiento (escrito en <strong>Go</strong>) procesa cada asignatura individualmente.</li>
-                <li>Los resultados se almacenan automáticamente y se reflejan en el Dashboard Principal.</li>
-              </ol>
-              <p><strong>Nota:</strong> Este proceso puede tomar unos segundos dependiendo del tamaño del archivo.</p>
+               <h3 style={{ marginTop: 0 }}>Instrucciones</h3>
+               <p>Suba el archivo Excel (.xlsx) con la planificación. El sistema validará y procesará en segundo plano.</p>
             </div>
-
             <div style={{ ...styles.card, textAlign: 'center', padding: '50px' }}>
-              <h3 style={{ color: colors.primary }}>Seleccionar Archivo de Planificación</h3>
-              <p style={{ color: '#666', marginBottom: 30 }}>Formatos soportados: .xlsx, .xls</p>
-              
+              <h3 style={{ color: colors.primary }}>Seleccionar Archivo</h3>
               <input type="file" ref={fileInputRef} onChange={handleUpload} style={{ display: 'none' }} accept=".xlsx, .xls" />
-              
               <button 
                 onClick={() => fileInputRef.current?.click()} 
                 style={{ ...styles.btn, ...styles.btnPrimary, width: 'auto', padding: '15px 40px', fontSize: '16px' }}
                 disabled={loading}
               >
-                {loading ? '⏳ Procesando Archivo...' : '📁 Subir Archivo Excel'}
+                {loading ? '⏳ Procesando...' : '📁 Subir Excel'}
               </button>
             </div>
           </div>
         )}
 
-        {/* --- VISTA 3: PARAMETRIZACIÓN (CON EXPLICACIÓN) --- */}
+        {/* --- VISTA 3: REGLAS --- */}
         {dashboardView === 'RULES' && (
           <div style={{ maxWidth: '800px', margin: 'auto' }}>
-            <h1 style={{ color: colors.primary, borderBottom: `2px solid ${colors.secondary}`, paddingBottom: 10 }}>⚙️ Configuración de Reglas de Negocio</h1>
-            
+            <h1 style={{ color: colors.primary, borderBottom: `2px solid ${colors.secondary}`, paddingBottom: 10 }}>⚙️ Configuración</h1>
             <div style={styles.infoBox}>
-              <h3 style={{ marginTop: 0 }}>Gestión de Alertas y Semáforos</h3>
-              <p>En esta sección puede definir el comportamiento del motor de análisis de capacidad. Las reglas afectan el cálculo en tiempo real:</p>
-              <ul>
-                <li><strong>Umbral de Alerta (%):</strong> Define a partir de qué porcentaje de ocupación una asignatura se considera en estado de "ALERTA" (Color Amarillo). Si supera el 100%, automáticamente es "SATURADO" (Rojo).</li>
-                <li><strong>Alerta Normativa (Fijo):</strong> El sistema verifica automáticamente si un curso tiene <strong>más de 35 estudiantes</strong>. Si es así, agrega la etiqueta <em>"ALERTA_NORMATIVA"</em> independientemente de la capacidad del aula.</li>
-              </ul>
-              <p>⚠️ <em>Cualquier cambio aquí provocará un recálculo masivo de todas las asignaturas en la base de datos.</em></p>
+              <h3 style={{ marginTop: 0 }}>Gestión de Umbrales</h3>
+              <p>El sistema marcará ALERTA si la ocupación supera este valor, o ALERTA_NORMATIVA si hay más de 35 estudiantes.</p>
             </div>
-
             <div style={styles.card}>
-              <h3 style={{ color: colors.primary, marginTop: 0 }}>Modificar Umbral de Ocupación</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginTop: '20px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: 5, fontWeight: 'bold', color: '#555' }}>Porcentaje de Alerta:</label>
-                  <input 
-                    type="number" 
-                    value={rulesForm} 
-                    onChange={e => setRulesForm(Number(e.target.value))} 
-                    style={{ ...styles.input, marginBottom: 0, width: '150px', fontSize: '18px', padding: '10px' }} 
-                  />
-                </div>
-                <div style={{ marginTop: '22px' }}>
-                  <button 
-                    onClick={handleRuleChange} 
-                    style={{ ...styles.btn, ...styles.btnPrimary, backgroundColor: colors.warning, color: '#333', width: 'auto', padding: '12px 30px' }}
-                  >
-                    💾 Guardar y Recalcular
-                  </button>
-                </div>
+              <h3 style={{ color: colors.primary }}>Modificar Umbral</h3>
+              <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
+                <input type="number" value={rulesForm} onChange={e => setRulesForm(Number(e.target.value))} style={{ ...styles.input, width: '150px' }} />
+                <button onClick={handleRuleChange} style={{ ...styles.btn, ...styles.btnPrimary, backgroundColor: colors.warning, width: 'auto' }}>💾 Guardar</button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* --- 🔔 VISTA 4: NOTIFICACIONES (NUEVA) --- */}
+        {dashboardView === 'NOTIFICATIONS' && (
+          <div style={{ maxWidth: '900px', margin: 'auto' }}>
+            <h1 style={{ color: colors.primary, borderBottom: `2px solid ${colors.secondary}`, paddingBottom: 10 }}>
+              Centro de Alertas
+            </h1>
+            
+            <button onClick={loadNotifications} style={{ marginBottom: 20, padding: '8px 15px', cursor: 'pointer', borderRadius: '4px', border: '1px solid #ccc', backgroundColor: 'white' }}>
+              🔄 Actualizar Buzón
+            </button>
+
+            {notifications.length === 0 ? (
+               <div style={{ ...styles.card, textAlign: 'center', color: '#888' }}>
+                 <h3>✅ Todo en orden</h3>
+                 <p>No tienes alertas críticas de saturación o normativa pendientes.</p>
+               </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                {notifications.map((notif: any) => (
+                  <div key={notif.id} style={{ 
+                    backgroundColor: colors.white, 
+                    padding: '20px', 
+                    borderRadius: '8px', 
+                    borderLeft: `6px solid ${notif.status.includes('SATURADO') ? colors.danger : colors.warning}`,
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                  }}>
+                    <div>
+                      <h4 style={{ margin: '0 0 5px 0', color: colors.primary, fontSize: '1.1em' }}>
+                        {notif.courseName} <span style={{ fontWeight: 'normal', color: '#666', fontSize: '0.9em' }}> | {notif.careerName}</span>
+                      </h4>
+                      <div style={{ fontSize: '0.9em', color: '#555' }}>
+                        {notif.facultyName}
+                      </div>
+                      <div style={{ marginTop: 10, fontWeight: 'bold', color: notif.status.includes('SATURADO') ? colors.danger : '#d4a000' }}>
+                        ⚠️ {notif.status}
+                      </div>
+                      <small style={{ color: '#999', marginTop: 8, display: 'block' }}>
+                        Detectado: {new Date(notif.createdAt).toLocaleString()}
+                      </small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
