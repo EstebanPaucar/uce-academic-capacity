@@ -89,3 +89,20 @@ model BusinessRule {
   @@map("business_rules")
 }
 
+model Notification {
+  id          Int      @id @default(autoincrement())
+  facultyName String   @map("faculty_name")
+  careerName  String   @map("career_name")
+  courseName  String   @map("course_name")
+  status      String   // SATURADO, ALERTA_NORMATIVA, etc.
+  message     String
+  
+  // Para filtrar por roles
+  facultyId   Int?     @map("faculty_id") // Guardamos el ID para filtrar rápido a los Directores
+  
+  createdAt   DateTime @default(now())
+  isRead      Boolean  @default(false)
+
+  @@map("notifications")
+}
+
