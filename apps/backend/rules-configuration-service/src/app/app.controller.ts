@@ -7,26 +7,31 @@ export class AppController {
   private readonly logger = new Logger(AppController.name);
 
   constructor(
-    @Inject('RULES_MQ') private readonly client: ClientProxy // Inyectamos el cliente del Module
+    @Inject('RULES_MQ') private readonly clientGo: ClientProxy,      // Para Go
+    @Inject('STRUCTURE_MQ') private readonly clientStructure: ClientProxy // Para NestJS
   ) {}
 
   @Post('update')
-  @UseGuards(RolesGuard) // 🔒 Protegido
+  @UseGuards(RolesGuard)
   async updateRule(@Body() body: { key: string; value: number }) {
     
     this.logger.log(`📢 ADMIN cambiando regla ${body.key} a ${body.value}%`);
 
-    // 1. Emitir evento a la cola (Fanout lógico)
-    // Esto lo escuchará Go (para RAM) y Academic-Structure (para Recálculo)
-    this.client.emit('rule_updated', {
+    const payload = {
       key: body.key,
       value: body.value,
       timestamp: new Date()
-    });
+    };
+
+    // 1. Avisar a Go (Actualiza variable en RAM)
+    this.clientGo.emit('rule_updated', payload);
+
+    // 2. Avisar a Academic Structure (Inicia loop de base de datos)
+    this.clientStructure.emit('rule_updated', payload);
 
     return { 
       status: 'success', 
-      message: `Regla actualizada. El sistema se está recalculando.` 
+      message: `Regla actualizada. El sistema se está recalculando en BD y Memoria.` 
     };
   }
 }

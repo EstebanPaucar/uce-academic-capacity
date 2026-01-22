@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AppModule } from './app/app.module';
+import { Logger } from '@nestjs/common';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -8,31 +9,36 @@ async function bootstrap() {
   app.enableCors();
   app.setGlobalPrefix('api');
 
-  // 🚩 CORRECCIÓN: Conexión al final del pipeline
+  // 🚩 CONEXIÓN 1: Escuchar RESULTADOS de Go (Para guardar en BD)
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.RMQ,
     options: {
       urls: [process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672'],
-      // Escuchamos la cola de resultados procesados por Go
       queue: 'calculation_results_queue', 
-      
-      // Confirmación manual obligatoria para evitar pérdida de datos [cite: 2026-01-18]
       noAck: false, 
-      
-      queueOptions: { 
-        // Persistencia garantizada para AWS Academy [cite: 2026-01-06]
-        durable: true 
-      },
+      queueOptions: { durable: true },
+    },
+  });
+
+  // 🚩 CONEXIÓN 2: Escuchar REGLAS (Para iniciar recálculo masivo)
+  // Esta es la pieza que te faltaba para que NestJS se entere del cambio
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.RMQ,
+    options: {
+      urls: [process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672'],
+      queue: 'structure_rules_queue', // ⚠️ COLA EXCLUSIVA PARA NEST
+      noAck: false, 
+      queueOptions: { durable: true },
     },
   });
 
   await app.startAllMicroservices();
+  
   const port = process.env.PORT || 3001;
   await app.listen(port);
   
-  console.log(`--- 🚀 Academic Structure Service is running on port ${port} ---`);
-  // Log actualizado para reflejar la nueva cola
-  console.log('--- 📦 Listening to results from Go: calculation_results_queue ---');
+  Logger.log(`🚀 Academic Structure Service is running on port ${port}`);
+  Logger.log('🐰 Listening to: calculation_results_queue AND structure_rules_queue');
 }
 
 bootstrap();
