@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # --- INFRAESTRUCTURA ---
   postgres-db:
     image: postgres:15-alpine
     environment:
@@ -9,35 +10,179 @@ services:
       POSTGRES_DB: academic_db
     ports: ["5432:5432"]
     volumes:
-      - postgres_data_test:/var/lib/postgresql/data
+      - postgres_prod_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin_uce -d academic_db"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  mongo-db:
+    image: mongo:latest
+    environment:
+      MONGO_INITDB_DATABASE: uce_audit_db
+    ports: ["27017:27017"]
+    volumes:
+      - mongo_prod_data:/data/db
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports: ["5672:5672", "15672:15672"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-cache:
+    image: redis:alpine
+    ports: ["6379:6379"]
+
+  # --- MICROSERVICIOS NESTJS (Usan Dockerfile.nest corregido) ---
+
+  # 1. Data Ingestion (3000)
+  data-ingestion-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.nest
+      args:
+        SERVICE_NAME: data-ingestion-service
+    ports: ["3000:3000"]
+    environment:
+      - PORT=3000
+      - DATABASE_URL=postgresql://admin_uce:password_uce@postgres-db:5432/academic_db?schema=public
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+    depends_on: [postgres-db, rabbitmq]
+
+  # 2. Academic Structure (3001)
+  academic-structure-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.nest
+      args:
+        SERVICE_NAME: academic-structure-service
+    ports: ["3001:3001"]
+    environment:
+      - PORT=3001
+      - DATABASE_URL=postgresql://admin_uce:password_uce@postgres-db:5432/academic_db?schema=public
+    depends_on: [postgres-db]
+
+  # 3. Auth Service (3002) - YA FUNCIONA
   auth-service:
     build:
       context: .
       dockerfile: Dockerfile.nest
       args:
         SERVICE_NAME: auth-service
-    ports: ["3002:3002"] # Exponemos el 3002
+    ports: ["3002:3002"]
     environment:
-      - PORT=3002 # 🚩 OBLIGAMOS A NESTJS A USAR EL 3002 INTERNAMENTE
+      - PORT=3002
       - DATABASE_URL=postgresql://admin_uce:password_uce@postgres-db:5432/academic_db?schema=public
-      - JWT_SECRET=super-secreto
-    depends_on:
-      postgres-db:
-        condition: service_healthy
+      - JWT_SECRET=super-secreto-uce
+    depends_on: [postgres-db]
 
+  # 4. Audit Service (3003) - Usa MONGO
+  audit-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.nest
+      args:
+        SERVICE_NAME: audit-service
+    ports: ["3003:3003"]
+    environment:
+      - PORT=3003
+      - MONGO_URL=mongodb://mongo-db:27017/uce_audit_db
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+    depends_on: [mongo-db, rabbitmq]
+
+  # 5. Rules Configuration (3005)
+  rules-configuration-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.nest
+      args:
+        SERVICE_NAME: rules-configuration-service
+    ports: ["3005:3005"]
+    environment:
+      - PORT=3005
+      - DATABASE_URL=postgresql://admin_uce:password_uce@postgres-db:5432/academic_db?schema=public
+    depends_on: [postgres-db]
+
+  # 6. Analytics Service (3006)
+  analytics-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.nest
+      args:
+        SERVICE_NAME: analytics-service
+    ports: ["3006:3006"]
+    environment:
+      - PORT=3006
+      - DATABASE_URL=postgresql://admin_uce:password_uce@postgres-db:5432/academic_db?schema=public
+    depends_on: [postgres-db]
+
+  # 7. Notification Service (3007)
+  notification-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.nest
+      args:
+        SERVICE_NAME: notification-service
+    ports: ["3007:3007"]
+    environment:
+      - PORT=3007
+      - DATABASE_URL=postgresql://admin_uce:password_uce@postgres-db:5432/academic_db?schema=public
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+    depends_on: [postgres-db, rabbitmq]
+
+  # 8. Request Service (3008)
+  request-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.nest
+      args:
+        SERVICE_NAME: request-service
+    ports: ["3008:3008"]
+    environment:
+      - PORT=3008
+      - DATABASE_URL=postgresql://admin_uce:password_uce@postgres-db:5432/academic_db?schema=public
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+    depends_on: [postgres-db, rabbitmq]
+
+  # 9. Capacity Management (3009)
+  capacity-management-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.nest
+      args:
+        SERVICE_NAME: capacity-management-service
+    ports: ["3009:3009"]
+    environment:
+      - PORT=3009
+      - DATABASE_URL=postgresql://admin_uce:password_uce@postgres-db:5432/academic_db?schema=public
+    depends_on: [postgres-db]
+
+  # --- MICROSERVICIO GO (Usa Dockerfile.go) ---
+
+  # 10. Capacity Calculation (3004) - GO
+  capacity-calculation-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.go
+    ports: ["3004:3004"]
+    environment:
+      - PORT=3004
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+    depends_on: [rabbitmq]
+
+  # --- FRONTEND ---
   web-admin:
     build:
       context: .
       dockerfile: Dockerfile.web
     ports: ["8080:80"]
-    depends_on:
-      - auth-service
+    depends_on: [auth-service]
 
 volumes:
-  postgres_data_test:
+  postgres_prod_data:
+  mongo_prod_data:
