@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: admin_uce
+      POSTGRES_PASSWORD: password_uce
+      POSTGRES_DB: academic_db
+    ports: ["5432:5432"]
+    volumes:
+      - postgres_data_test:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin_uce -d academic_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.nest
+      args:
+        SERVICE_NAME: auth-service
+    ports: ["3002:3002"] # Exponemos el 3002
+    environment:
+      - PORT=3002 # 🚩 OBLIGAMOS A NESTJS A USAR EL 3002 INTERNAMENTE
+      - DATABASE_URL=postgresql://admin_uce:password_uce@postgres-db:5432/academic_db?schema=public
+      - JWT_SECRET=super-secreto
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+
+  web-admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports: ["8080:80"]
+    depends_on:
+      - auth-service
+
+volumes:
+  postgres_data_test:

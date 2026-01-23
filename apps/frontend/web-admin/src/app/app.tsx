@@ -4,14 +4,24 @@ import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 // --- CONFIGURACIÓN DE PUERTOS (ECOSISTEMA MICROSERVICIOS) ---
-const INGESTION_URL    = 'http://localhost:3000/api'; 
+/*const INGESTION_URL    = 'http://localhost:3000/api'; 
 const STRUCTURE_URL    = 'http://localhost:3001/api'; 
 const AUTH_URL         = 'http://localhost:3002/api'; 
 const RULES_URL        = 'http://localhost:3005/api'; 
 const ANALYTICS_URL    = 'http://localhost:3006/api'; 
 const NOTIFICATION_URL = 'http://localhost:3007/api'; 
 const REQUEST_URL      = 'http://localhost:3008/api'; // 🆕 request-service
+*/
 
+// --- CONFIGURACIÓN DE PUERTOS (USANDO PROXY NGINX) ---
+// Ahora todas apuntan al mismo origen (puerto 80), Nginx redirige internamente.
+const INGESTION_URL    = '/api'; 
+const STRUCTURE_URL    = '/api'; 
+const AUTH_URL         = '/api'; 
+const RULES_URL        = '/api'; 
+const ANALYTICS_URL    = '/api'; 
+const NOTIFICATION_URL = '/api'; 
+const REQUEST_URL      = '/api';
 // --- ESTILOS ---
 const colors = {
   primary: '#003366', secondary: '#CC9900', bg: '#f4f6f9', white: '#ffffff',
