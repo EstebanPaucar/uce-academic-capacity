@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # 1. Base de Datos Relacional (PostgreSQL)
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: uce_postgres
+    environment:
+      POSTGRES_USER: admin_uce
+      POSTGRES_PASSWORD: password_uce
+      POSTGRES_DB: academic_db
+    ports: ["5432:5432"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin_uce -d academic_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Base de Datos NoSQL (MongoDB)
+  mongo-db:
+    image: mongo:6.0  # Usamos versión específica para evitar sorpresas
+    container_name: uce_mongo
+    ports: ["27017:27017"]
+    environment:
+      MONGO_INITDB_DATABASE: uce_audit_db
+    volumes:
+      - mongo_data:/data/db
+
+  # 3. Caché y Sesiones (Redis)
+  redis-cache:
+    image: redis:alpine
+    container_name: uce_redis
+    ports: ["6379:6379"]
+
+  # 4. Bus de Mensajería (RabbitMQ)
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine # Versión estable
+    container_name: uce_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  # 5. Streaming de Eventos (Apache Kafka - CORREGIDO)
+  # Usamos la imagen oficial de Confluent o Apache en modo KRaft (Sin Zookeeper)
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: uce_kafka
+    ports:
+      - "9092:9092"
+    environment:
+      # Configuración para modo KRaft (Single Node)
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+
+  # 6. Orquestador de Automatización (n8n - CORREGIDO)
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: uce_n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=password_uce
+      # Fix importante para n8n en docker
+      - WEBHOOK_URL=http://localhost:5678/
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  postgres_data:
+  mongo_data:
+  n8n_data: # Agregamos volumen para n8n
