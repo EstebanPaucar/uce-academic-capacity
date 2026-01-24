@@ -2,6 +2,8 @@ import { Controller, Get, Logger, Inject } from '@nestjs/common';
 import { EventPattern, Payload, Ctx, RmqContext, ClientProxy } from '@nestjs/microservices';
 import { AppService } from './app.service';
 
+
+
 @Controller('structure')
 export class AppController {
   private readonly logger = new Logger(AppController.name);
