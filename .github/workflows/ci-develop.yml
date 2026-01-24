@@ -51,11 +51,15 @@ jobs:
       - name: Install Node Dependencies
         run: npm install
 
-      - name: Install Go Dependencies
-        # Buscamos el go.mod en la subcarpeta y descargamos las librerías ahí mismo
+      - name: Sync Go Dependencies
+        # Si tienes go.work, esto sincroniza todo automáticamente
         run: |
-          find apps/backend/capacity-calculation-service -name "go.mod" -execdir go mod download \;
-          find apps/backend/capacity-calculation-service -name "go.mod" -execdir go mod tidy \;
+          if [ -f go.work ]; then
+            go work sync
+          else
+            find apps/backend/capacity-calculation-service -name "go.mod" -execdir go mod download \;
+          fi
 
       - name: Build Affected Projects
+        # Ejecuta el build de todos los servicios (incluyendo el de Go)
         run: npx nx affected -t build --base=origin/develop --no-cloud
