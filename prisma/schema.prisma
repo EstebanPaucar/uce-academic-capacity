@@ -1,0 +1,138 @@
+// Configuración única del cliente de Prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Configuración única de la fuente de datos para PostgreSQL
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Modelo de Usuario
+model User {
+  id           Int    @id @default(autoincrement())
+  username     String @unique
+  email        String @unique
+  passwordHash String @map("password_hash")
+  roleId       Int    @map("role_id")
+  role         Role   @relation(fields: [roleId], references: [id])
+
+  facultyId    Int?     @map("faculty_id")
+  faculty      Faculty? @relation(fields: [facultyId], references: [id])
+
+  @@map("users")
+}
+
+// Modelo de Rol
+model Role {
+  id          Int    @id @default(autoincrement())
+  name        String @unique
+  permissions Json?
+  users       User[]
+
+  @@map("roles")
+}
+
+// Entidad para el Academic-Structure-Service
+model Faculty {
+  id      Int      @id @default(autoincrement())
+  name    String   @unique
+  careers Career[]
+  users   User[]
+
+  @@map("faculties")
+}
+
+model Career {
+  id        Int      @id @default(autoincrement())
+  name      String
+  facultyId Int      @map("faculty_id")
+  faculty   Faculty  @relation(fields: [facultyId], references: [id])
+  courses   Course[]
+
+  // 🚩 SOLUCIÓN AL ERROR ts(2353): Define el índice único compuesto [cite: 2026-01-18]
+  @@unique([name, facultyId], name: "name_facultyId")
+  @@map("careers")
+}
+
+
+model Course {
+  id              Int      @id @default(autoincrement()) // Se mantiene tu ID original
+  name            String
+  level           String
+  parallel        String
+  maxCapacity     Int
+  currentStudents Int
+  
+  // 🚩 NUEVOS CAMPOS PARA EL MOTOR DE CÁLCULO
+  occupancyPercentage Float    @default(0.0)
+  status              String   @default("DISPONIBLE") // 'DISPONIBLE', 'ALERTA', 'SATURADO'
+  
+  // Campos de auditoría (Recomendado por tu informe técnico)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  careerId        Int      // Se mantiene la relación por Int
+  career          Career   @relation(fields: [careerId], references: [id])
+
+  requests            Request[]
+
+  @@unique([name, parallel, level, careerId])
+}
+
+// Entidad para el Rules-Configuration-Service
+model BusinessRule {
+  id          Int     @id @default(autoincrement())
+  ruleName    String  @unique @map("rule_name")
+  value       String
+  description String?
+
+  @@map("business_rules")
+}
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  facultyName String   @map("faculty_name")
+  careerName  String   @map("career_name")
+  courseName  String   @map("course_name")
+  status      String   // SATURADO, ALERTA_NORMATIVA, etc.
+  message     String
+  
+  // Para filtrar por roles
+  facultyId   Int?     @map("faculty_id") // Guardamos el ID para filtrar rápido a los Directores
+  
+  createdAt   DateTime @default(now())
+  isRead      Boolean  @default(false)
+
+  @@map("notifications")
+}
+
+model Request {
+  id            Int      @id @default(autoincrement())
+  
+  // Relaciones
+  courseId      Int      @map("course_id")
+  course        Course   @relation(fields: [courseId], references: [id])
+  
+  directorId    Int      @map("director_id") // ID del usuario que solicita
+  
+  // Datos del cambio
+  currentCapacity Int    @map("current_capacity")
+  requestedCapacity Int  @map("requested_capacity")
+  
+  // Justificación (Requisito RF-12 del informe)
+  justificationType String @map("justification_type") // 'CIERRE', 'PROFESIONALIZANTE', 'UNICO'
+  details       String?  // Explicación adicional
+  
+  // Estado del Flujo (PENDING, APPROVED, REJECTED)
+  status        String   @default("PENDING")
+  
+  resolutionCode String? @map("resolution_code") // Código de acta si se aprueba
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("requests")
+}
+

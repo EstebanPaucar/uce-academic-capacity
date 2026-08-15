@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # Base de datos
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: uce_academic_db
+      POSTGRES_USER: uce_user
+      POSTGRES_PASSWORD: uce_password_2025
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  mongo:
+    image: mongo:6
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: mongo_pass_2025
+
+  # Aplicación principal (todos los microservicios)
+  uce-app:
+    build: .
+    ports:
+      - "80:80"           # Frontend
+      - "3000:3000"       # Data Ingestion
+      - "3001:3001"       # Academic Structure
+      - "3002:3002"       # Auth
+      - "3003:3003"       # Audit
+      - "3005:3005"       # Rules
+      - "3006:3006"       # Analytics
+      - "3007:3007"       # Notification
+      - "3008:3008"       # Request
+    environment:
+      DATABASE_URL: postgresql://uce_user:uce_password_2025@postgres:5432/uce_academic_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      MONGO_URL: mongodb://admin:mongo_pass_2025@mongo:27017/uce_audit_db?authSource=admin
+      JWT_SECRET: uce_secret_key_2026
+    depends_on:
+      - postgres
+      - rabbitmq
+      - mongo
+
+volumes:
+  postgres_data:

@@ -1,0 +1,65 @@
+name: CI - QA Development Flow
+
+on:
+  push:
+    branches: [ "develop" ]
+  pull_request:
+    branches: [ "develop" ]
+
+jobs:
+  validate-infrastructure:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init -backend=false
+
+      - name: Terraform Validate
+        run: |
+          cd terraform
+          terraform validate
+
+  validate-apps:
+    name: Build Microservices (Nx)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Install Node Dependencies
+        run: npm install
+
+      - name: Sync Go Dependencies
+        # Si tienes go.work, esto sincroniza todo automáticamente
+        run: |
+          if [ -f go.work ]; then
+            go work sync
+          else
+            find apps/backend/capacity-calculation-service -name "go.mod" -execdir go mod download \;
+          fi
+
+      - name: Build Affected Projects
+        # Ejecuta el build de todos los servicios (incluyendo el de Go)
+        run: npx nx affected -t build --base=origin/develop --no-cloud

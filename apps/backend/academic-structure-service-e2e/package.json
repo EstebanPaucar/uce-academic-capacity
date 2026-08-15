@@ -1,0 +1,27 @@
+{
+  "name": "@org/academic-structure-service-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "nx": {
+    "name": "academic-structure-service-e2e",
+    "implicitDependencies": [
+      "academic-structure-service"
+    ],
+    "targets": {
+      "e2e": {
+        "executor": "@nx/jest:jest",
+        "outputs": [
+          "{projectRoot}/test-output/jest/coverage"
+        ],
+        "options": {
+          "jestConfig": "apps/backend/academic-structure-service-e2e/jest.config.cts",
+          "passWithNoTests": true
+        },
+        "dependsOn": [
+          "academic-structure-service:build",
+          "academic-structure-service:serve"
+        ]
+      }
+    }
+  }
+}
