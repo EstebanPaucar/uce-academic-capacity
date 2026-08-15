@@ -1,104 +1,111 @@
-# New Nx Repository
+# UCE Academic Capacity System
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+Sistema distribuido de gestión de capacidad académica para la Universidad Central del Ecuador. Automatiza el cálculo, monitoreo y control de la capacidad estudiantil por curso (cupos, saturación, alertas normativas) mediante una arquitectura de microservicios orientada a eventos, desplegada sobre infraestructura como código en AWS.
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
+## 🏗️ Arquitectura
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/js?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
-
-## Generate a library
-
-```sh
-npx nx g @nx/js:lib packages/pkg1 --publishable --importPath=@my-org/pkg1
-```
-
-## Run tasks
-
-To build the library use:
-
-```sh
-npx nx build pkg1
-```
-
-To run any task with Nx use:
-
-```sh
-npx nx <target> <project-name>
-```
-
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
-
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Versioning and releasing
-
-To version and release the library use
+El sistema está compuesto por **9 microservicios independientes** (8 en Node.js/NestJS + 1 motor de cálculo en Go) que se comunican de forma asíncrona a través de **RabbitMQ**, con persistencia en **PostgreSQL** (datos transaccionales, vía Prisma) y **MongoDB** (auditoría). El motor de reglas de negocio corre en un servicio Go independiente para maximizar el rendimiento del cálculo de capacidad, desacoplado del resto de servicios de dominio.
 
 ```
-npx nx release
+Frontend (React/Vite)
+      │
+      ▼
+API Gateway implícito por servicio (Auth, Academic Structure, Data Ingestion, ...)
+      │
+      ├── auth-service               → Autenticación y JWT
+      ├── academic-structure-service → Facultades, carreras, cursos
+      ├── data-ingestion-service     → Ingesta de datos académicos
+      ├── audit-service              → Auditoría (MongoDB)
+      ├── rules-configuration-service→ Reglas de negocio (roles/guards)
+      ├── analytics-service          → Métricas y reportes
+      ├── notification-service       → Notificaciones a directores
+      ├── request-service            → Solicitudes de cambio de cupo
+      ├── capacity-management-service→ Gestión de capacidad
+      │
+      └── capacity-calculation-service (Go) → Motor de cálculo de ocupación/estado
 ```
 
-Pass `--dry-run` to see what would happen without actually releasing the library.
+### Flujo de eventos (RabbitMQ)
 
-[Learn more about Nx release &raquo;](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+1. `academic-structure-service` publica un curso nuevo/actualizado en la cola `academic_data_queue`.
+2. `capacity-calculation-service` (Go) consume el mensaje, calcula `occupancyPercentage` y `status` (`DISPONIBLE`, `ALERTA`, `SATURADO`) y publica el resultado en `calculation_results_queue`.
+3. `academic-structure-service` persiste el resultado en PostgreSQL vía Prisma.
+4. Cuando `rules-configuration-service` actualiza una regla de negocio (`structure_rules_queue`), se dispara un **recálculo masivo**: se reenvían todos los cursos existentes al motor Go para aplicar la nueva regla.
 
-## Keep TypeScript project references up to date
+Toda la comunicación usa confirmación manual de mensajes (`ack`/`nack`) para garantizar consistencia ante fallos de persistencia.
 
-Nx automatically updates TypeScript [project references](https://www.typescriptlang.org/docs/handbook/project-references.html) in `tsconfig.json` files to ensure they remain accurate based on your project dependencies (`import` or `require` statements). This sync is automatically done when running tasks such as `build` or `typecheck`, which require updated references to function correctly.
+## ⚙️ Stack Tecnológico
 
-To manually trigger the process to sync the project graph dependencies information to the TypeScript project references, run the following command:
+| Categoría | Tecnología |
+|---|---|
+| Backend (microservicios de dominio) | Node.js, TypeScript, NestJS |
+| Motor de cálculo | Go |
+| Mensajería | RabbitMQ (event-driven, colas durables) |
+| Persistencia transaccional | PostgreSQL + Prisma ORM |
+| Persistencia de auditoría | MongoDB |
+| Frontend | React + Vite |
+| Infraestructura como código | Terraform (AWS) |
+| Contenedores | Docker / Docker Compose |
+| Monorepo / Build system | Nx |
+| CI/CD | GitHub Actions |
+| Autenticación | JWT |
 
-```sh
-npx nx sync
+## ☁️ Infraestructura (Terraform / AWS)
+
+La infraestructura se define completamente en `terraform/main.tf` y provisiona:
+
+- **Red**: VPC dedicada con subredes públicas (multi-AZ) y una subred privada, Internet Gateway y NAT Gateway para salida controlada de la subred privada.
+- **Cómputo**: instancia bastion (jump host, subred pública) e instancia de aplicación `t3.large` (subred privada) dimensionada para correr los 9 microservicios junto a RabbitMQ y las bases de datos.
+- **Balanceo**: Application Load Balancer con health checks hacia Nginx.
+- **Seguridad**: Security Groups segmentados por rol (bastion, ALB, aplicación).
+- **Almacenamiento**: bucket S3 para reportes generados.
+- **Bootstrap automatizado**: el `user_data` de la instancia instala Docker, Node.js 20 y Go 1.21, y habilita Nginx sin intervención manual.
+
+El acceso a la instancia de aplicación (subred privada) se realiza mediante un patrón **bastion host**, saltando desde la instancia pública.
+
+## 🚀 Puesta en marcha local
+
+El proyecto incluye un script (`start-all.ps1`) que levanta todo el stack en un solo comando:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-all.ps1
 ```
 
-You can enforce that the TypeScript project references are always in the correct state when running in CI by adding a step to your CI job configuration that runs the following command:
+Esto ejecuta, en orden:
 
-```sh
-npx nx sync:check
+1. `docker-compose up -d` → PostgreSQL, RabbitMQ, MongoDB
+2. `npx prisma db push` → sincroniza el esquema con PostgreSQL
+3. Levanta el motor de cálculo en Go
+4. Levanta los 9 microservicios Nx (cada uno en su puerto, `3000`–`3009`)
+5. Levanta el frontend (`web-admin`) en `http://localhost:4200`
+
+Alternativamente, cada pieza puede levantarse de forma manual con `docker-compose up -d` y `npx nx serve <servicio>`.
+
+## 📁 Estructura del monorepo
+
+```
+apps/
+├── backend/
+│   ├── academic-structure-service/
+│   ├── analytics-service/
+│   ├── audit-service/
+│   ├── auth-service/
+│   ├── capacity-calculation-service/   # Go
+│   ├── capacity-management-service/
+│   ├── data-ingestion-service/
+│   ├── notification-service/
+│   ├── request-service/
+│   └── rules-configuration-service/
+└── frontend/
+    └── web-admin/                      # React + Vite
+prisma/
+└── schema.prisma                       # Modelos: User, Role, Faculty, Career, Course, BusinessRule, Notification, Request
+terraform/
+└── main.tf                             # Infraestructura AWS completa
 ```
 
-[Learn more about nx sync](https://nx.dev/reference/nx-commands#sync)
+Cada microservicio backend cuenta con su propio proyecto de pruebas end-to-end (`*-e2e`) gestionado por Nx.
 
-## Nx Cloud
+## 👨‍💻 Autor
 
-Nx Cloud ensures a [fast and scalable CI](https://nx.dev/ci/intro/why-nx-cloud?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) pipeline. It includes features such as:
-
-- [Remote caching](https://nx.dev/ci/features/remote-cache?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task distribution across multiple machines](https://nx.dev/ci/features/distribute-task-execution?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Automated e2e test splitting](https://nx.dev/ci/features/split-e2e-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task flakiness detection and rerunning](https://nx.dev/ci/features/flaky-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-### Set up CI (non-Github Actions CI)
-
-**Note:** This is only required if your CI provider is not GitHub Actions.
-
-Use the following command to configure a CI workflow for your workspace:
-
-```sh
-npx nx g ci-workflow
-```
-
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Install Nx Console
-
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
-
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Useful links
-
-Learn more:
-
-- [Learn more about this workspace setup](https://nx.dev/nx-api/js?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-And join the Nx community:
-
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+**Esteban Paucar**
